@@ -52,7 +52,9 @@ threat_logs_backup.json
 
 # Local agent/runtime metadata
 .agents/
+.vercel/
 
 # Test files
 test_*.js
 content_original.js
+.vercel
