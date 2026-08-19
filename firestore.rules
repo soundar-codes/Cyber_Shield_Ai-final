@@ -1,0 +1,44 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function validFeedback() {
+      return request.resource.data.keys().hasOnly([
+        'content', 'predictedStatus', 'userReportedStatus', 'type', 'riskScore',
+        'signals', 'comments', 'proofUrl', 'timestamp', 'verificationStatus',
+        'datasetAction'
+      ])
+      && request.resource.data.content is string
+      && request.resource.data.content.size() > 0
+      && request.resource.data.content.size() <= 5000
+      && request.resource.data.predictedStatus in ['SCAM', 'SAFE']
+      && request.resource.data.userReportedStatus in ['SCAM', 'SAFE']
+      && request.resource.data.type in ['FALSE_POSITIVE', 'FALSE_NEGATIVE']
+      && request.resource.data.riskScore is int
+      && request.resource.data.riskScore >= 0
+      && request.resource.data.riskScore <= 100
+      && request.resource.data.verificationStatus == 'PENDING_REVIEW'
+      && request.resource.data.datasetAction == 'NONE';
+    }
+
+    match /feedback_submissions/{feedbackId} {
+      allow create: if validFeedback();
+      allow read: if true;
+      allow update: if request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+        'verificationStatus', 'datasetAction', 'reviewedAt'
+      ])
+      && request.resource.data.verificationStatus in ['PENDING_REVIEW', 'VERIFIED_SCAM', 'VERIFIED_SAFE', 'REJECTED']
+      && request.resource.data.datasetAction in ['QUEUED_FOR_ADDITION', 'QUEUED_FOR_REMOVAL', 'NONE'];
+    }
+
+    match /threat_logs/{threatId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -33,6 +33,30 @@ function setupListeners() {
     document.getElementById('toggleNotifications').addEventListener('change', (e) => {
         chrome.storage.sync.set({ notificationsEnabled: e.target.checked });
     });
+
+    document.getElementById('feedbackButton').addEventListener('click', openFeedbackPortal);
+}
+
+function openFeedbackPortal() {
+    const feedbackHint = document.getElementById('feedbackHint');
+    chrome.storage.local.get(['lastAnalysis'], (data) => {
+        const analysis = data.lastAnalysis;
+        if (!analysis || !analysis.content) {
+            feedbackHint.textContent = 'No recent analysis context found. Open an alert first.';
+            return;
+        }
+
+        const params = new URLSearchParams({
+            content: analysis.content,
+            predictedStatus: analysis.predictedStatus,
+            riskScore: String(analysis.riskScore),
+            signals: (analysis.signals || []).join('|')
+        });
+
+        chrome.tabs.create({
+            url: `https://cybershield-frontend-swart.vercel.app/feedback?${params.toString()}`
+        });
+    });
 }
 
 // Check backend and extension status

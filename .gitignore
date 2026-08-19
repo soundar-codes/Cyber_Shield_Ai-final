@@ -45,9 +45,13 @@ Thumbs.db
 # Logs
 *.log
 
-# Model files (keep in repo for now)
-# model.pkl
-# vectorizer.pkl
+# Model files and private credentials
+*.pkl
+*serviceAccountKey.json
+threat_logs_backup.json
+
+# Local agent/runtime metadata
+.agents/
 
 # Test files
 test_*.js

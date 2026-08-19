@@ -120,7 +120,8 @@ function handleUrlScamDetected(request, sender, sendResponse) {
         threats: request.threats,
         checkId: `URL_${Date.now()}`,
         isUrlScam: true,
-        messagePreview: request.messageText
+        messagePreview: request.messageText,
+        messageKey: request.messageText
     }, (response) => {
         if (chrome.runtime.lastError) {
             console.log('Content script not ready yet');
@@ -194,7 +195,9 @@ async function handleScamCheck(request, sender, sendResponse) {
                 confidence: confidence,
                 threats: threats,
                 checkId: result.check_id,
-                matchesTrainingData: matchesTraining
+                matchesTrainingData: matchesTraining,
+                messagePreview: message.substring(0, 80),
+                messageKey: message
             }, (response) => {
                 if (chrome.runtime.lastError) {
                     console.log('Content script not ready yet');

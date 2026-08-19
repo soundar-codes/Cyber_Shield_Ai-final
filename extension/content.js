@@ -5,6 +5,7 @@
  */
 
 let detectionEnabled = true;
+const analyzedMessageTexts = new WeakMap();
 
 // Load detection status
 chrome.storage.sync.get(['detectionEnabled'], (data) => {
@@ -153,13 +154,12 @@ function analyzeUrlsInMessage(messageText, element, platform) {
         console.log(`🔗 [${platform}] SCAM URL DETECTED:`, detectedUrlThreats);
         
         // Highlight the message with suspicious URL
-        element.style.backgroundColor = 'rgba(255, 67, 67, 0.15)';
-        element.style.borderLeft = '5px solid #FF4444';
+        highlightThreatElement(element, 'scam', platform);
         element.style.paddingLeft = '10px';
         element.setAttribute('data-url-warning', 'true');
         
         // Add URL threat badge
-        addUrlBadge(element, detectedUrlThreats);
+        addUrlBadge(element, detectedUrlThreats, messageText);
         
         // Show premium popup directly (no background.js roundtrip)
         showWarning({
@@ -167,6 +167,7 @@ function analyzeUrlsInMessage(messageText, element, platform) {
             confidence: 0.95,
             threats: detectedUrlThreats.slice(0, 3),
             messagePreview: messageText.substring(0, 80),
+            messageKey: messageText,
             isUrlScam: true
         });
         
@@ -176,8 +177,9 @@ function analyzeUrlsInMessage(messageText, element, platform) {
     return false;
 }
 
-function addUrlBadge(element, threats) {
-    if (element.querySelector('.url-threat-badge')) return;
+function addUrlBadge(element, threats, messageText) {
+    const surface = getThreatSurface(element);
+    if (surface.querySelector('.url-threat-badge')) return;
     
     const badge = document.createElement('div');
     badge.className = 'url-threat-badge';
@@ -185,7 +187,9 @@ function addUrlBadge(element, threats) {
         position: absolute;
         top: 5px;
         right: 5px;
-        background: #ff4444;
+        background: linear-gradient(135deg, rgba(255,68,68,0.95), rgba(160,20,45,0.72));
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
         color: white;
         padding: 5px 10px;
         border-radius: 4px;
@@ -193,11 +197,25 @@ function addUrlBadge(element, threats) {
         font-size: 11px;
         font-weight: bold;
         z-index: 1000;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+        box-shadow: 0 3px 14px rgba(255,68,68,0.65), inset 0 1px 0 rgba(255,255,255,0.45);
     `;
     badge.textContent = '🔗 SCAM URL';
-    element.style.position = 'relative';
-    element.appendChild(badge);
+    badge.title = 'Click to view the AI risk score';
+    badge.style.cursor = 'pointer';
+    badge.addEventListener('click', (event) => {
+        event.stopPropagation();
+        showWarning({
+            status: 'scam',
+            confidence: 0.95,
+            threats: threats.slice(0, 3),
+            messagePreview: messageText.substring(0, 80),
+            messageKey: messageText,
+            isUrlScam: true,
+            manual: true
+        });
+    });
+    surface.style.position = 'relative';
+    surface.appendChild(badge);
 }
 
 // ============ WHATSAPP WEB MONITORING ============
@@ -259,13 +277,13 @@ function monitorWhatsApp() {
                 // Delay to let WhatsApp render all messages in new chat
                 setTimeout(() => scanChatHistory('whatsapp'), 300);
             }
-        }, 500); // 500ms poll = fast detection of chat switch
+        }, 1000); // Keep chat switching responsive without polling excessively
         
         // Periodically pick up newly arrived messages (new messages have no hash yet)
         setInterval(() => {
-            const allMessages = document.querySelectorAll('[data-testid="msg-container"]');
-            allMessages.forEach(msg => analyzeMessage(msg, 'whatsapp'));
-        }, 1500);
+            const allMessages = Array.from(document.querySelectorAll('[data-testid="msg-container"]'));
+            allMessages.slice(-50).forEach(msg => analyzeMessage(msg, 'whatsapp'));
+        }, 3000);
         
         console.log('✓ WhatsApp Web monitoring started');
         
@@ -306,11 +324,14 @@ function scanChatHistory(platform) {
         if (!text || text.trim().length <= 3) return;
         const instant = instantKeywordCheck(text);
         if (instant !== 'safe') {
-            msg.style.backgroundColor = instant === 'scam' ? 'rgba(255,67,67,0.15)' : 'rgba(255,193,7,0.15)';
-            msg.style.borderLeft = `5px solid ${instant === 'scam' ? '#FF4444' : '#FF9800'}`;
+            highlightThreatElement(msg, instant, platform);
             msg.style.paddingLeft = '10px';
             msg.setAttribute('data-scam-warning', 'true');
-            addBadge(msg, instant);
+            addBadge(msg, instant, {
+                confidence: instant === 'scam' ? 0.85 : 0.55,
+                threats: extractInstantThreats(text),
+                messageText: text
+            });
             console.log(`⚡ INSTANT [${platform}]: ${instant.toUpperCase()} — "${text.substring(0,50)}"`);
             
             // ⭐ Show premium popup for the first scam/suspicious found
@@ -321,6 +342,7 @@ function scanChatHistory(platform) {
                     confidence: instant === 'scam' ? 0.85 : 0.55,
                     threats: extractInstantThreats(text),
                     messagePreview: text.substring(0, 80),
+                    messageKey: text,
                     isUrlScam: false
                 });
             }
@@ -611,6 +633,10 @@ function analyzeMessage(element, platform) {
     let messageText = extractText(element, platform);
     
     if (messageText && messageText.trim().length > 3) {
+        const analysisKey = `${platform}:${messageText}`;
+        if (analyzedMessageTexts.get(element) === analysisKey) return;
+        analyzedMessageTexts.set(element, analysisKey);
+
         console.log(`[${platform}] Found message: "${messageText.substring(0, 50)}..."`);
         
         // ⚡ INSTANT PRE-CHECK — runs synchronously with zero network delay
@@ -618,11 +644,14 @@ function analyzeMessage(element, platform) {
         let instantFired = false; // track if popup was already shown
         if (instantResult !== 'safe') {
             console.log(`⚡ [${platform}] INSTANT DETECTION: ${instantResult}`);
-            element.style.backgroundColor = instantResult === 'scam' ? 'rgba(255, 67, 67, 0.15)' : 'rgba(255, 193, 7, 0.15)';
-            element.style.borderLeft = `5px solid ${instantResult === 'scam' ? '#FF4444' : '#FF9800'}`;
+            highlightThreatElement(element, instantResult, platform);
             element.style.paddingLeft = '10px';
             element.setAttribute('data-scam-warning', 'true');
-            addBadge(element, instantResult);
+            addBadge(element, instantResult, {
+                confidence: instantResult === 'scam' ? 0.85 : 0.55,
+                threats: extractInstantThreats(messageText),
+                messageText
+            });
             instantFired = true;
             
             // ✅ Show popup immediately from instant check
@@ -631,6 +660,7 @@ function analyzeMessage(element, platform) {
                 confidence: instantResult === 'scam' ? 0.85 : 0.55,
                 threats: extractInstantThreats(messageText),
                 messagePreview: messageText.substring(0, 80),
+                messageKey: messageText,
                 isUrlScam: false
             });
         }
@@ -639,43 +669,53 @@ function analyzeMessage(element, platform) {
         const hasScamUrl = analyzeUrlsInMessage(messageText, element, platform);
         
         // Also send to ML for higher-accuracy check (runs in background)
-        chrome.runtime.sendMessage({
-            type: 'CHECK_SCAM',
-            text: messageText,
-            platform: platform
-        }, (response) => {
-            if (chrome.runtime.lastError) {
-                console.log('Background not ready');
-                return;
-            }
+        try {
+            chrome.runtime.sendMessage({
+                type: 'CHECK_SCAM',
+                text: messageText,
+                platform: platform
+            }, (response) => {
+                if (chrome.runtime.lastError) {
+                    console.log('Background not ready');
+                    return;
+                }
 
-            if (response && response.type === 'SCAM_DETECTED') {
-                console.log(`⚠️ [${platform}] ML SCAM DETECTED:`, response);
-                
-                // Upgrade highlight
-                element.style.backgroundColor = 'rgba(255, 67, 67, 0.15)';
-                element.style.borderLeft = '5px solid #FF4444';
-                element.style.paddingLeft = '10px';
-                element.setAttribute('data-scam-warning', 'true');
-                
-                // Add/upgrade badge
-                const existingBadge = element.querySelector('.cyber-shield-badge');
-                if (existingBadge) existingBadge.remove();
-                addBadge(element, response.status);
-                
-                // Only show ML popup if instant check didn't already fire one
-                // (avoids double popup on same message)
-                if (!instantFired) {
-                    showWarning({
-                        status: response.status,
+                if (response && response.type === 'SCAM_DETECTED') {
+                    console.log(`⚠️ [${platform}] ML SCAM DETECTED:`, response);
+
+                    // Upgrade highlight
+                    highlightThreatElement(element, 'scam', platform);
+                    element.style.paddingLeft = '10px';
+                    element.setAttribute('data-scam-warning', 'true');
+
+                    // Add/upgrade badge
+                    const existingBadge = element.querySelector('.cyber-shield-badge');
+                    if (existingBadge) existingBadge.remove();
+                    addBadge(element, response.status, {
                         confidence: response.confidence,
                         threats: response.threats || [],
-                        messagePreview: messageText.substring(0, 80),
-                        isUrlScam: false
+                        messageText
                     });
+
+                    // Only show ML popup if instant check didn't already fire one
+                    // (avoids double popup on same message)
+                    if (!instantFired) {
+                        showWarning({
+                            status: response.status,
+                            confidence: response.confidence,
+                            threats: response.threats || [],
+                            messagePreview: messageText.substring(0, 80),
+                            messageKey: messageText,
+                            isUrlScam: false
+                        });
+                    }
                 }
+            });
+        } catch (error) {
+            if (!String(error).toLowerCase().includes('context invalidated')) {
+                console.warn(`[${platform}] Background check unavailable:`, error);
             }
-        });
+        }
     }
 }
 
@@ -750,8 +790,37 @@ function extractText(element, platform) {
 }
 
 // Add warning badge to suspicious message
-function addBadge(element, status) {
-    if (element.querySelector('.cyber-shield-badge')) return;
+function highlightThreatElement(element, status, platform) {
+    if (platform !== 'whatsapp' && platform !== 'gmail') return;
+
+    const surface = getThreatSurface(element, platform);
+    if (!surface) return;
+    const isScam = status === 'scam';
+    const accent = isScam ? '#ff304f' : '#ffb000';
+    const tint = isScam ? 'rgba(255,67,67,0.15)' : 'rgba(255,193,7,0.15)';
+
+    surface.style.position = 'relative';
+    surface.style.setProperty('background-image', `linear-gradient(105deg, ${tint}, rgba(255,255,255,0.08) 48%, transparent)`, 'important');
+    surface.style.setProperty('background-color', tint, 'important');
+    surface.style.setProperty('border-left', `5px solid ${accent}`, 'important');
+    surface.style.setProperty('padding-left', '10px', 'important');
+}
+
+function getThreatSurface(element, platform = 'whatsapp') {
+    if (platform === 'gmail') {
+        return element.matches('.a3s, .ii.gt')
+            ? element
+            : element.querySelector('.a3s, .ii.gt');
+    }
+
+    return element.matches('[data-pre-plain-text], .copyable-text')
+        ? element
+        : element.querySelector('[data-pre-plain-text], .copyable-text') || element;
+}
+
+function addBadge(element, status, details = {}) {
+    const surface = getThreatSurface(element);
+    if (surface.querySelector('.cyber-shield-badge')) return;
 
     const badge = document.createElement('div');
     badge.className = 'cyber-shield-badge';
@@ -763,7 +832,9 @@ function addBadge(element, status) {
         position: absolute;
         top: 5px;
         right: 5px;
-        background: ${bgColor};
+        background: linear-gradient(135deg, ${bgColor}ee, ${bgColor}99);
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
         color: white;
         padding: 5px 10px;
         border-radius: 4px;
@@ -771,19 +842,50 @@ function addBadge(element, status) {
         font-size: 11px;
         font-weight: bold;
         z-index: 1000;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+        box-shadow: 0 3px 14px ${bgColor}99, inset 0 1px 0 rgba(255,255,255,0.45);
     `;
     badge.textContent = label;
-    element.style.position = 'relative';
-    element.appendChild(badge);
+    badge.title = 'Click to view the AI risk score';
+    badge.style.cursor = 'pointer';
+    badge.addEventListener('click', (event) => {
+        event.stopPropagation();
+        showWarning({
+            status,
+            confidence: details.confidence || (status === 'scam' ? 0.85 : 0.55),
+            threats: details.threats || [],
+            messagePreview: (details.messageText || '').substring(0, 80),
+            messageKey: details.messageText || '',
+            manual: true
+        });
+    });
+    surface.style.position = 'relative';
+    surface.appendChild(badge);
 }
 
 // ============ WARNING POPUP ALERT ============
 
 // Track if a warning is currently showing (only one at a time, stays until dismissed or refresh)
 let warningActive = false;
+const whatsappWarningCounts = new Map();
+const whatsappWarningMessages = new Set();
+
+function getWhatsAppChatKey() {
+    const titleEl = document.querySelector('header [data-testid="conversation-header"] span[dir], header [title]');
+    return titleEl
+        ? (titleEl.textContent || titleEl.getAttribute('title') || '').trim()
+        : 'unknown-chat';
+}
 
 function showWarning(data) {
+    const isWhatsApp = /(^|\.)whatsapp\.com$/i.test(window.location.hostname);
+    const chatKey = isWhatsApp ? getWhatsAppChatKey() : '';
+    const messageKey = data.messageKey || data.messagePreview;
+    const warningMessageKey = messageKey
+        ? `${chatKey}:${messageKey.trim().replace(/\s+/g, ' ').toLowerCase()}`
+        : '';
+
+    if (!data.manual && isWhatsApp && warningMessageKey && whatsappWarningMessages.has(warningMessageKey)) return;
+
     // If a warning is already showing, don't replace it — let user read and dismiss first
     // (except: if the new one is a scam and the old one is just suspicious, upgrade it)
     const existing = document.getElementById('cyberShieldAlert');
@@ -794,6 +896,13 @@ function showWarning(data) {
         existing.remove();
     }
 
+    if (!data.manual && isWhatsApp) {
+        const warningCount = whatsappWarningCounts.get(chatKey) || 0;
+        if (warningCount >= 2) return;
+        whatsappWarningCounts.set(chatKey, warningCount + 1);
+        if (warningMessageKey) whatsappWarningMessages.add(warningMessageKey);
+    }
+
     warningActive = true;
 
     const isUrlScam   = data.isUrlScam === true;
@@ -801,6 +910,16 @@ function showWarning(data) {
     const riskScore   = Math.round((data.confidence || 0) * 100);
     const threats     = data.threats || [];
     const msgPreview  = (data.messagePreview || '').substring(0, 80);
+
+    chrome.storage.local.set({
+        lastAnalysis: {
+            content: data.messageKey || data.messagePreview || '',
+            predictedStatus: isScam ? 'SCAM' : 'SAFE',
+            riskScore,
+            signals: threats,
+            analyzedAt: new Date().toISOString()
+        }
+    });
 
     const accentColor  = isScam ? '#ff4444' : '#ffb300';
     const accentGlow   = isScam ? 'rgba(255,68,68,0.4)' : 'rgba(255,179,0,0.4)';
@@ -1011,7 +1130,14 @@ function showWarning(data) {
                     transition:all 0.25s;
                 ">🚨 Report Crime</button>
             </div>
-
+            <button id="cs-feedback-btn" style="
+                width:100%;margin-top:8px;padding:10px 8px;
+                background:rgba(0,243,255,0.08);
+                border:1.5px solid #00f3ff;border-radius:10px;
+                color:#00f3ff;font-weight:800;font-size:11px;
+                cursor:pointer;letter-spacing:0.6px;text-transform:uppercase;
+                transition:all 0.25s;
+            ">⚡ Feedback / Report Error</button>
             <!-- "stays until dismissed" hint -->
             <div style="text-align:center;margin-top:8px;font-size:10px;color:#3a4a6a;letter-spacing:0.5px;">
                 This alert stays until you dismiss it or refresh the page
@@ -1033,13 +1159,22 @@ function showWarning(data) {
     const closeBtn = popup.querySelector('#cs-close-alert');
     const dismissBtn = popup.querySelector('#cs-dismiss-alert');
     const helplineBtn = popup.querySelector('#cs-helpline-btn');
+    const feedbackBtn = popup.querySelector('#cs-feedback-btn');
     if (closeBtn) closeBtn.addEventListener('click', close);
     if (dismissBtn) dismissBtn.addEventListener('click', close);
     if (helplineBtn) helplineBtn.addEventListener('click', () => {
         close();
         setTimeout(() => showHelplineModal(), 380);
     });
-
+    if (feedbackBtn) feedbackBtn.addEventListener('click', () => {
+        const params = new URLSearchParams({
+            content: data.messageKey || data.messagePreview || '',
+            predictedStatus: isScam ? 'SCAM' : 'SAFE',
+            riskScore: String(riskScore),
+            signals: threats.join('|')
+        });
+        window.open(`https://cybershield-frontend-swart.vercel.app/feedback?${params.toString()}`, '_blank', 'noopener');
+    });
     // ✅ NO auto-close — warning stays until user manually dismisses or page refreshes
 }
 

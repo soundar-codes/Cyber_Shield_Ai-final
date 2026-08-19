@@ -1,0 +1,492 @@
+<!doctype html>
+<html lang="en">
+
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>CyberShield // Feedback Uplink</title>
+        <link rel="preconnect" href="https://fonts.googleapis.com">
+        <link
+            href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;800&family=Space+Mono:wght@400;700&display=swap"
+            rel="stylesheet">
+        <style>
+            :root {
+                --void: #080b10;
+                --panel: rgba(15, 23, 35, .82);
+                --line: #213348;
+                --cyan: #00f3ff;
+                --red: #ff2a5f;
+                --green: #00ff66;
+                --amber: #ffb700;
+                --ink: #d8e9f5;
+                --muted: #7890a8;
+            }
+
+            * {
+                box-sizing: border-box;
+            }
+
+            body {
+                margin: 0;
+                min-height: 100vh;
+                color: var(--ink);
+                background: var(--void);
+                font-family: 'Space Mono', monospace;
+                overflow-x: hidden;
+            }
+
+            body:before {
+                content: "";
+                position: fixed;
+                inset: 0;
+                pointer-events: none;
+                opacity: .28;
+                background-image: linear-gradient(rgba(0, 243, 255, .08) 1px, transparent 1px), linear-gradient(90deg, rgba(0, 243, 255, .08) 1px, transparent 1px);
+                background-size: 42px 42px;
+                mask-image: linear-gradient(to bottom, black, transparent 82%);
+            }
+
+            body:after {
+                content: "";
+                position: fixed;
+                inset: 0;
+                pointer-events: none;
+                background: repeating-linear-gradient(0deg, transparent 0 5px, rgba(255, 255, 255, .018) 6px);
+                mix-blend-mode: screen;
+            }
+
+            .shell {
+                width: min(1120px, calc(100% - 36px));
+                margin: auto;
+                padding: 32px 0 60px;
+                position: relative;
+            }
+
+            .topline {
+                display: flex;
+                justify-content: space-between;
+                gap: 20px;
+                align-items: center;
+                border-bottom: 1px solid var(--line);
+                padding-bottom: 18px;
+            }
+
+            .brand {
+                color: var(--cyan);
+                font: 800 18px 'Orbitron', sans-serif;
+                letter-spacing: 2px;
+            }
+
+            .status {
+                color: var(--green);
+                font-size: 11px;
+                letter-spacing: 1px;
+            }
+
+            .status i {
+                display: inline-block;
+                width: 8px;
+                height: 8px;
+                margin-right: 8px;
+                border-radius: 50%;
+                background: var(--green);
+                box-shadow: 0 0 14px var(--green);
+            }
+
+            .hero {
+                display: grid;
+                grid-template-columns: 1.25fr .75fr;
+                gap: 32px;
+                align-items: end;
+                padding: 72px 0 38px;
+            }
+
+            .eyebrow {
+                color: var(--red);
+                font-size: 11px;
+                letter-spacing: 2px;
+            }
+
+            h1 {
+                margin: 12px 0 16px;
+                max-width: 700px;
+                font: 800 clamp(34px, 6vw, 72px)/1.02 'Orbitron', sans-serif;
+                letter-spacing: 0;
+                text-shadow: 0 0 24px rgba(0, 243, 255, .25);
+            }
+
+            .intro {
+                color: var(--muted);
+                line-height: 1.7;
+                max-width: 650px;
+            }
+
+            .telemetry {
+                border: 1px solid var(--cyan);
+                padding: 20px;
+                position: relative;
+                background: rgba(0, 243, 255, .035);
+                box-shadow: 0 0 30px rgba(0, 243, 255, .09);
+            }
+
+            .telemetry:before,
+            .telemetry:after {
+                content: "";
+                position: absolute;
+                width: 18px;
+                height: 18px;
+                border-color: var(--cyan);
+            }
+
+            .telemetry:before {
+                top: -1px;
+                left: -1px;
+                border-top: 2px solid;
+                border-left: 2px solid;
+            }
+
+            .telemetry:after {
+                right: -1px;
+                bottom: -1px;
+                border-right: 2px solid;
+                border-bottom: 2px solid;
+            }
+
+            .telemetry-label {
+                color: var(--muted);
+                font-size: 10px;
+                letter-spacing: 1px;
+            }
+
+            .telemetry-score {
+                margin: 10px 0;
+                color: var(--cyan);
+                font: 700 48px 'Orbitron', sans-serif;
+            }
+
+            .telemetry-bar {
+                height: 5px;
+                background: #152536;
+            }
+
+            .telemetry-bar span {
+                display: block;
+                height: 100%;
+                background: linear-gradient(90deg, var(--green), var(--amber), var(--red));
+            }
+
+            .panel {
+                background: var(--panel);
+                border: 1px solid var(--line);
+                backdrop-filter: blur(14px);
+                padding: 28px;
+                position: relative;
+            }
+
+            .panel h2 {
+                margin: 0 0 22px;
+                font: 700 18px 'Orbitron', sans-serif;
+                letter-spacing: 1px;
+            }
+
+            .panel h2 span {
+                color: var(--cyan);
+            }
+
+            .grid {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 18px;
+            }
+
+            .field {
+                display: flex;
+                flex-direction: column;
+                gap: 8px;
+            }
+
+            .field.full {
+                grid-column: 1/-1;
+            }
+
+            label {
+                color: var(--muted);
+                font-size: 10px;
+                letter-spacing: 1px;
+                text-transform: uppercase;
+            }
+
+            .required {
+                color: var(--red);
+            }
+
+            input,
+            textarea,
+            select {
+                width: 100%;
+                color: var(--ink);
+                background: rgba(4, 9, 15, .8);
+                border: 1px solid #294157;
+                border-radius: 2px;
+                padding: 13px 14px;
+                font: 13px 'Space Mono', monospace;
+                outline: none;
+            }
+
+            .field textarea {
+                min-height: 150px;
+                resize: vertical;
+            }
+
+            .field input:focus,
+            .field textarea:focus,
+            .field select:focus {
+                border-color: var(--cyan);
+                box-shadow: 0 0 16px rgba(0, 243, 255, .12);
+            }
+
+            .choices {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 10px;
+            }
+
+            .choice input {
+                display: none;
+            }
+
+            .choice label {
+                display: block;
+                padding: 16px;
+                min-height: 82px;
+                border: 1px solid #294157;
+                color: var(--muted);
+                cursor: pointer;
+                text-transform: none;
+                line-height: 1.5;
+            }
+
+            .choice label strong {
+                display: block;
+                color: var(--ink);
+                margin-bottom: 5px;
+            }
+
+            .choice input:checked+label {
+                border-color: var(--red);
+                color: #f4b0c0;
+                background: rgba(255, 42, 95, .08);
+                box-shadow: 0 0 18px rgba(255, 42, 95, .12);
+            }
+
+            .choice.safe input:checked+label {
+                border-color: var(--green);
+                color: #b9ffd2;
+                background: rgba(0, 255, 102, .07);
+            }
+
+            .tags {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 8px;
+            }
+
+            .tag input {
+                display: none;
+            }
+
+            .tag label {
+                display: block;
+                border: 1px solid #294157;
+                padding: 9px 11px;
+                cursor: pointer;
+                text-transform: none;
+            }
+
+            .tag input:checked+label {
+                color: var(--cyan);
+                border-color: var(--cyan);
+                background: rgba(0, 243, 255, .08);
+            }
+
+            .submit {
+                margin-top: 24px;
+                width: 100%;
+                border: 1px solid var(--cyan);
+                color: var(--cyan);
+                background: rgba(0, 243, 255, .08);
+                padding: 16px;
+                font: 700 12px 'Space Mono', monospace;
+                letter-spacing: 1.5px;
+                cursor: pointer;
+            }
+
+            .submit:hover:not(:disabled) {
+                color: var(--void);
+                background: var(--cyan);
+                box-shadow: 0 0 28px rgba(0, 243, 255, .35);
+            }
+
+            .submit:disabled {
+                opacity: .55;
+                cursor: wait;
+            }
+
+            .notice {
+                min-height: 20px;
+                margin: 14px 0 0;
+                color: var(--amber);
+                font-size: 11px;
+            }
+
+            .notice.success {
+                color: var(--green);
+            }
+
+            .notice.error {
+                color: var(--red);
+            }
+
+            .footer {
+                padding-top: 24px;
+                color: #50667e;
+                font-size: 10px;
+                letter-spacing: 1px;
+                text-align: center;
+            }
+
+            @media (max-width:760px) {
+                .shell {
+                    width: min(100% - 22px, 600px);
+                    padding-top: 18px;
+                }
+
+                .hero {
+                    grid-template-columns: 1fr;
+                    padding-top: 46px;
+                    gap: 22px;
+                }
+
+                .grid {
+                    grid-template-columns: 1fr;
+                }
+
+                .field.full {
+                    grid-column: auto;
+                }
+
+                .panel {
+                    padding: 19px;
+                }
+
+                .topline {
+                    align-items: flex-start;
+                    flex-direction: column;
+                    gap: 10px;
+                }
+            }
+        </style>
+    </head>
+
+    <body>
+        <main class="shell">
+            <div class="topline">
+                <div class="brand">CYBERSHIELD // RLHF</div>
+                <div class="status"><i></i>UPLINK READY / HUMAN REVIEW ACTIVE</div>
+            </div>
+            <section class="hero">
+                <div>
+                    <div class="eyebrow">FEEDBACK CHANNEL 07 // MODEL CORRECTION</div>
+                    <h1>Make the signal sharper.</h1>
+                    <p class="intro">Your report becomes a reviewed training signal. Tell us where the detector missed
+                        context, and help CyberShield distinguish real threats from everyday messages.</p>
+                </div>
+                <aside class="telemetry">
+                    <div class="telemetry-label">IMPORTED AI RISK SCORE</div>
+                    <div class="telemetry-score" id="scoreValue">--/100</div>
+                    <div class="telemetry-bar"><span id="scoreBar" style="width:0%"></span></div>
+                    <div class="telemetry-label" style="margin-top:14px">PREDICTION: <b id="predictionValue">WAITING</b>
+                    </div>
+                </aside>
+            </section>
+            <form class="panel" id="feedbackForm">
+                <h2><span>01</span> // CLASSIFY THE ERROR</h2>
+                <div class="field full"><label>What was wrong with the AI decision? <span
+                            class="required">*</span></label>
+                    <div class="choices">
+                        <div class="choice"><input id="falsePositive" name="feedbackType" type="radio"
+                                value="FALSE_POSITIVE"><label for="falsePositive"><strong>FALSE POSITIVE</strong>AI
+                                flagged this as SCAM, but it is safe.</label></div>
+                        <div class="choice safe"><input id="falseNegative" name="feedbackType" type="radio"
+                                value="FALSE_NEGATIVE"><label for="falseNegative"><strong>FALSE NEGATIVE</strong>AI
+                                marked this safe, but it is a scam.</label></div>
+                    </div>
+                </div>
+                <div class="grid" style="margin-top:22px">
+                    <div class="field"><label for="reportedStatus">Correct classification</label><select
+                            id="reportedStatus">
+                            <option value="SAFE">SAFE / NOT SCAM</option>
+                            <option value="SCAM">SCAM</option>
+                        </select></div>
+                    <div class="field"><label for="proofUrl">Proof or source URL</label><input id="proofUrl" type="url"
+                            placeholder="https://..." maxlength="1000"></div>
+                    <div class="field full"><label>Context signals</label>
+                        <div class="tags">
+                            <div class="tag"><input id="phishing" type="checkbox" value="Phishing"><label
+                                    for="phishing">Phishing</label></div>
+                            <div class="tag"><input id="financial" type="checkbox" value="Financial Scam"><label
+                                    for="financial">Financial scam</label></div>
+                            <div class="tag"><input id="hijack" type="checkbox" value="Account Hijack"><label
+                                    for="hijack">Account hijack</label></div>
+                            <div class="tag"><input id="alarm" type="checkbox" value="False Alarm"><label
+                                    for="alarm">False alarm</label></div>
+                        </div>
+                    </div>
+                    <div class="field full"><label for="content">Analyzed message <span
+                                class="required">*</span></label><textarea id="content" required maxlength="5000"
+                            placeholder="Paste the analyzed message or use the imported context..."></textarea></div>
+                    <div class="field full"><label for="comments">Analyst notes</label><textarea id="comments"
+                            maxlength="2000" placeholder="What context did the model miss?"></textarea></div>
+                </div>
+                <button class="submit" id="submitButton" type="submit">TRANSMIT TO RLHF PIPELINE</button>
+                <div class="notice" id="notice" role="status"></div>
+            </form>
+            <div class="footer">CYBERSHIELD AI // SUBMISSIONS ARE QUEUED FOR HUMAN VERIFICATION BEFORE DATASET ACTION
+            </div>
+        </main>
+        <script type="module">
+            import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js';
+            import { getFirestore, addDoc, collection } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js';
+            const app = initializeApp({ apiKey: 'AIzaSyCPML3kfr84iLnCTFYdqrSB0_hrdwHgh88', authDomain: 'cybershield-88323.firebaseapp.com', projectId: 'cybershield-88323', storageBucket: 'cybershield-88323.firebasestorage.app', messagingSenderId: '439105190458', appId: '1:439105190458:web:73da13fd84e09793db1303' });
+            const db = getFirestore(app);
+            const params = new URLSearchParams(location.search);
+            const content = document.getElementById('content');
+            const score = Math.max(0, Math.min(100, Number(params.get('riskScore')) || 0));
+            const prediction = (params.get('predictedStatus') || 'SAFE').toUpperCase() === 'SCAM' ? 'SCAM' : 'SAFE';
+            content.value = params.get('content') || '';
+            document.getElementById('scoreValue').textContent = `${score}/100`;
+            document.getElementById('scoreBar').style.width = `${score}%`;
+            document.getElementById('predictionValue').textContent = prediction;
+            document.getElementById(prediction === 'SCAM' ? 'falsePositive' : 'falseNegative').checked = true;
+            document.getElementById('reportedStatus').value = prediction === 'SCAM' ? 'SAFE' : 'SCAM';
+            const importedSignals = (params.get('signals') || '').split('|').filter(Boolean).map(signal => signal.toLowerCase());
+            document.querySelectorAll('.tag input').forEach(input => {
+                input.checked = importedSignals.some(signal => signal.includes(input.value.toLowerCase()));
+            });
+            document.getElementById('feedbackForm').addEventListener('submit', async (event) => {
+                event.preventDefault();
+                const type = document.querySelector('input[name="feedbackType"]:checked')?.value;
+                const notice = document.getElementById('notice');
+                const button = document.getElementById('submitButton');
+                if (!type || !content.value.trim()) { notice.textContent = 'Select an error type and provide the analyzed message.'; notice.className = 'notice error'; return; }
+                button.disabled = true; button.textContent = 'TRANSMITTING TO RLHF PIPELINE...'; notice.textContent = '';
+                try {
+                    await addDoc(collection(db, 'feedback_submissions'), { content: content.value.trim(), predictedStatus: prediction, userReportedStatus: document.getElementById('reportedStatus').value, type, riskScore: score, signals: Array.from(document.querySelectorAll('.tag input:checked')).map(input => input.value), comments: document.getElementById('comments').value.trim(), proofUrl: document.getElementById('proofUrl').value.trim(), timestamp: new Date().toISOString(), verificationStatus: 'PENDING_REVIEW', datasetAction: 'NONE' });
+                    notice.textContent = 'TRANSMISSION RECEIVED // THANK YOU FOR IMPROVING THE MODEL'; notice.className = 'notice success'; event.target.reset(); content.value = '';
+                } catch (error) { console.error(error); notice.textContent = 'UPLINK FAILED // CHECK YOUR CONNECTION AND RETRY'; notice.className = 'notice error'; }
+                button.disabled = false; button.textContent = 'TRANSMIT TO RLHF PIPELINE';
+            });
+        </script>
+    </body>
+
+</html>

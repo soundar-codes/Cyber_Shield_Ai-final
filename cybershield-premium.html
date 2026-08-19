@@ -1,291 +1,347 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CyberShield Premium — AI-Powered Threat Intelligence Dashboard</title>
-<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Orbitron:wght@400;500;600;700;800;900&family=DM+Mono:wght@400;500&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-<script type="module">
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-  import { getFirestore, collection, onSnapshot, query, orderBy, limit, where, getDocs, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
-  
-  // Your exact Firebase configuration
-  const firebaseConfig = {
-    apiKey: "AIzaSyCPML3kfr84iLnCTFYdqrSB0_hrdwHgh88",
-    authDomain: "cybershield-88323.firebaseapp.com",
-    projectId: "cybershield-88323",
-    storageBucket: "cybershield-88323.firebasestorage.app",
-    messagingSenderId: "439105190458",
-    appId: "1:439105190458:web:73da13fd84e09793db1303",
-    measurementId: "G-FV1YVXJF6G"
-  };
-  
-  // Initialize Firebase
-  console.log('🔥 Initializing Firebase...');
-  const app = initializeApp(firebaseConfig);
-  const db = getFirestore(app);
-  console.log('✅ Firebase initialized successfully');
-  
-  // Global state management
-  window.cyberShieldState = {
-    isConnected: false,
-    threats: [],
-    hasRealData: false
-  };
-  
-  // Test Firebase connection
-  async function testFirebaseConnection() {
-    try {
-      console.log('🔍 Testing Firebase connection...');
-      const testQuery = query(collection(db, "threat_logs"), limit(1));
-      const snapshot = await getDocs(testQuery);
-      console.log('✅ Firebase connection test passed');
-      console.log(`📊 Found ${snapshot.docs.length} documents in test query`);
-      return true;
-    } catch (error) {
-      console.error('❌ Firebase connection test failed:', error);
-      return false;
-    }
-  }
-  
-  // Initialize Firebase connection and start listening
-  async function initializeFirebase() {
-    const isConnected = await testFirebaseConnection();
-    
-    if (isConnected) {
-      try {
-        console.log('🔄 Starting real-time threat listener...');
-        
-        // Real-time threat logs listener
-        const q = query(collection(db, "threat_logs"), orderBy("detected_at", "desc"), limit(100));
-        
-        onSnapshot(q, (snap) => {
-          console.log(`📨 Firebase snapshot received: ${snap.docs.length} documents`);
-          
-          const threats = [];
-          const seenUrls = new Set();
-          const seenHashes = new Set();
-          
-          snap.forEach(doc => {
-            const data = doc.data();
-            console.log('📋 Processing threat:', data);
-            
-            // Create threat object with proper field mapping
-            const threat = {
-              id: doc.id,
-              website_url: data.website_url || data.url || 'Unknown URL',
-              threat_type: data.threat_type || data.type || 'Unknown',
-              platform: data.platform || detectPlatform(data.website_url || data.url),
-              detected_at: data.detected_at,
-              risk_level: data.risk_level || 'medium',
-              hash: data.hash,
-              ...data
-            };
-            
-            // Skip duplicates based on URL or hash
-            const normalizedUrl = threat.website_url.toLowerCase().trim();
-            const threatHash = threat.hash || createHash(normalizedUrl);
-            
-            if (seenUrls.has(normalizedUrl)) {
-              console.log('🔄 Skipping duplicate URL:', normalizedUrl);
-              return;
-            }
-            
-            if (threat.hash && seenHashes.has(threat.hash)) {
-              console.log('🔄 Skipping duplicate hash:', threat.hash);
-              return;
-            }
-            
-            // Mark as seen
-            seenUrls.add(normalizedUrl);
-            if (threat.hash) seenHashes.add(threat.hash);
-            
-            // Calculate risk score and classification
-            threat.riskScore = calculateRiskScore(threat);
-            threat.threatLevel = classifyThreat(threat);
-            
-            threats.push(threat);
-            console.log('✅ Processed unique threat:', threat);
-          });
-          
-          console.log(`✅ Processed ${threats.length} unique threats (removed ${snap.docs.length - threats.length} duplicates)`);
-          
-          // Update state
-          window.cyberShieldState.isConnected = true;
-          window.cyberShieldState.threats = threats;
-          window.cyberShieldState.hasRealData = threats.length > 0;
-          
-          console.log('🎯 Dashboard state updated:', {
-            isConnected: window.cyberShieldState.isConnected,
-            hasRealData: window.cyberShieldState.hasRealData,
-            threatsCount: threats.length,
-            duplicatesRemoved: snap.docs.length - threats.length
-          });
-          
-          // Force render with the deduplicated data
-          renderAll(threats);
-        });
-        
-        console.log('✅ Real-time listener started successfully');
-        
-      } catch (error) {
-        console.error("❌ Firebase listener setup failed:", error);
-        showConnectionError(error.message);
+
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CyberShield Premium — AI-Powered Threat Intelligence Dashboard</title>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Orbitron:wght@400;500;600;700;800;900&family=DM+Mono:wght@400;500&family=Inter:wght@300;400;500;600;700&display=swap"
+      rel="stylesheet">
+    <script type="module">
+      import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+      import { getFirestore, collection, onSnapshot, query, orderBy, limit, where, getDocs, serverTimestamp, updateDoc, doc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+
+      // Your exact Firebase configuration
+      const firebaseConfig = {
+        apiKey: "AIzaSyCPML3kfr84iLnCTFYdqrSB0_hrdwHgh88",
+        authDomain: "cybershield-88323.firebaseapp.com",
+        projectId: "cybershield-88323",
+        storageBucket: "cybershield-88323.firebasestorage.app",
+        messagingSenderId: "439105190458",
+        appId: "1:439105190458:web:73da13fd84e09793db1303",
+        measurementId: "G-FV1YVXJF6G"
+      };
+
+      // Initialize Firebase
+      console.log('🔥 Initializing Firebase...');
+      const app = initializeApp(firebaseConfig);
+      const db = getFirestore(app);
+      console.log('✅ Firebase initialized successfully');
+
+      // Global state management
+      window.cyberShieldState = {
+        isConnected: false,
+        threats: [],
+        hasRealData: false
+      };
+
+      // Test Firebase connection
+      async function testFirebaseConnection() {
+        try {
+          console.log('🔍 Testing Firebase connection...');
+          const testQuery = query(collection(db, "threat_logs"), limit(1));
+          const snapshot = await getDocs(testQuery);
+          console.log('✅ Firebase connection test passed');
+          console.log(`📊 Found ${snapshot.docs.length} documents in test query`);
+          return true;
+        } catch (error) {
+          console.error('❌ Firebase connection test failed:', error);
+          return false;
+        }
       }
-    } else {
-      showConnectionError('Failed to connect to Firebase');
-    }
-  }
-  
-  // Hash function for deduplication (same as your firebase-config.js)
-  function createHash(text) {
-    let hash = 0;
-    for (let i = 0; i < text.length; i++) {
-      hash = ((hash << 5) - hash) + text.charCodeAt(i);
-      hash |= 0;
-    }
-    return hash.toString();
-  }
-  
-  // Detect platform from URL
-  function detectPlatform(url) {
-    if (!url) return 'unknown';
-    if (url.includes('whatsapp.com') || url.includes('wa.me')) return 'whatsapp';
-    if (url.includes('gmail.com') || url.includes('mail.google.com')) return 'gmail';
-    return 'web';
-  }
-  
-  // Show connection error
-  function showConnectionError(message) {
-    const tbody = document.getElementById('mainTable');
-    if (tbody) {
-      tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:50px;color:#ff0066">
+
+      // Initialize Firebase connection and start listening
+      async function initializeFirebase() {
+        const isConnected = await testFirebaseConnection();
+
+        if (isConnected) {
+          try {
+            console.log('🔄 Starting real-time threat listener...');
+
+            // Real-time threat logs listener
+            const q = query(collection(db, "threat_logs"), orderBy("detected_at", "desc"), limit(100));
+
+            onSnapshot(q, (snap) => {
+              console.log(`📨 Firebase snapshot received: ${snap.docs.length} documents`);
+
+              const threats = [];
+              const seenUrls = new Set();
+              const seenHashes = new Set();
+
+              snap.forEach(doc => {
+                const data = doc.data();
+                console.log('📋 Processing threat:', data);
+
+                // Create threat object with proper field mapping
+                const threat = {
+                  id: doc.id,
+                  website_url: data.website_url || data.url || 'Unknown URL',
+                  threat_type: data.threat_type || data.type || 'Unknown',
+                  platform: data.platform || detectPlatform(data.website_url || data.url),
+                  detected_at: data.detected_at,
+                  risk_level: data.risk_level || 'medium',
+                  hash: data.hash,
+                  ...data
+                };
+
+                // Skip duplicates based on URL or hash
+                const normalizedUrl = threat.website_url.toLowerCase().trim();
+                const threatHash = threat.hash || createHash(normalizedUrl);
+
+                if (seenUrls.has(normalizedUrl)) {
+                  console.log('🔄 Skipping duplicate URL:', normalizedUrl);
+                  return;
+                }
+
+                if (threat.hash && seenHashes.has(threat.hash)) {
+                  console.log('🔄 Skipping duplicate hash:', threat.hash);
+                  return;
+                }
+
+                // Mark as seen
+                seenUrls.add(normalizedUrl);
+                if (threat.hash) seenHashes.add(threat.hash);
+
+                // Calculate risk score and classification
+                threat.riskScore = calculateRiskScore(threat);
+                threat.threatLevel = classifyThreat(threat);
+
+                threats.push(threat);
+                console.log('✅ Processed unique threat:', threat);
+              });
+
+              console.log(`✅ Processed ${threats.length} unique threats (removed ${snap.docs.length - threats.length} duplicates)`);
+
+              // Update state
+              window.cyberShieldState.isConnected = true;
+              window.cyberShieldState.threats = threats;
+              window.cyberShieldState.hasRealData = threats.length > 0;
+
+              console.log('🎯 Dashboard state updated:', {
+                isConnected: window.cyberShieldState.isConnected,
+                hasRealData: window.cyberShieldState.hasRealData,
+                threatsCount: threats.length,
+                duplicatesRemoved: snap.docs.length - threats.length
+              });
+
+              // Force render with the deduplicated data
+              renderAll(threats);
+            });
+
+            console.log('✅ Real-time listener started successfully');
+            initializeFeedbackFeed();
+
+          } catch (error) {
+            console.error("❌ Firebase listener setup failed:", error);
+            showConnectionError(error.message);
+          }
+        } else {
+          showConnectionError('Failed to connect to Firebase');
+        }
+      }
+
+      // Hash function for deduplication (same as your firebase-config.js)
+      function createHash(text) {
+        let hash = 0;
+        for (let i = 0; i < text.length; i++) {
+          hash = ((hash << 5) - hash) + text.charCodeAt(i);
+          hash |= 0;
+        }
+        return hash.toString();
+      }
+
+      // Detect platform from URL
+      function detectPlatform(url) {
+        if (!url) return 'unknown';
+        if (url.includes('whatsapp.com') || url.includes('wa.me')) return 'whatsapp';
+        if (url.includes('gmail.com') || url.includes('mail.google.com')) return 'gmail';
+        return 'web';
+      }
+
+      // Show connection error
+      function showConnectionError(message) {
+        const tbody = document.getElementById('mainTable');
+        if (tbody) {
+          tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:50px;color:#ff0066">
         <div class="empty-ring">❌</div>
         <h3>FIREBASE CONNECTION ERROR</h3>
         <p>${message}</p>
         <p>Please check your Firebase configuration and internet connection.</p>
       </td></tr>`;
-    }
-  }
-  
-  // Initialize dashboard variables
-  window._reports = [];
-  window._currentFilter = 'all';
-  window._currentTimeFilter = 'all';
-  window._selectedThreats = new Set();
-  
-  // Dashboard Functions
-  function calculateRiskScore(data) {
-    let score = 50;
-    if (data.risk_level) {
-      switch(data.risk_level.toLowerCase()) {
-        case 'critical': score = 95; break;
-        case 'high': score = 80; break;
-        case 'medium': score = 60; break;
-        case 'low': score = 30; break;
+        }
       }
-    }
-    return score;
-  }
-  
-  function classifyThreat(data) {
-    const score = calculateRiskScore(data);
-    if (score >= 80) return { level: 'CRITICAL', color: '#ff0066', icon: '🔴' };
-    if (score >= 60) return { level: 'HIGH', color: '#ff6600', icon: '🟠' };
-    if (score >= 40) return { level: 'MEDIUM', color: '#ffaa00', icon: '🟡' };
-    return { level: 'LOW', color: '#00ff88', icon: '🟢' };
-  }
-  
-  function renderAll(reports) {
-    console.log('🎨 renderAll called with:', reports.length, 'reports');
-    console.log('🎨 hasRealData:', window.cyberShieldState.hasRealData);
-    
-    // Always update stats, even with empty data
-    updateStats(reports);
-    
-    // Always render the table, regardless of hasRealData
-    renderTable(reports);
-    
-    console.log('✅ renderAll completed');
-  }
-  
-  function updateStats(reports) {
-    console.log('📊 Updating stats with:', reports.length, 'reports');
-    
-    // Store reports globally for other functions
-    window._reports = reports;
-    
-    const totalEl = document.getElementById('statTotal');
-    const highEl = document.getElementById('statHigh');
-    const avgEl = document.getElementById('statAvg');
-    
-    if (totalEl) totalEl.textContent = reports.length;
-    
-    const highRisk = reports.filter(r => calculateRiskScore(r) >= 60).length;
-    if (highEl) highEl.textContent = highRisk;
-    
-    const avgScore = reports.length > 0 
-      ? Math.round(reports.reduce((sum, r) => sum + calculateRiskScore(r), 0) / reports.length)
-      : 0;
-    if (avgEl) avgEl.textContent = avgScore;
-    
-    // Update platform stats with better detection
-    const whatsappThreats = reports.filter(r => {
-      const platform = r.platform || detectPlatform(r.website_url || r.url);
-      return platform === 'whatsapp';
-    }).length;
-    
-    const gmailThreats = reports.filter(r => {
-      const platform = r.platform || detectPlatform(r.website_url || r.url);
-      return platform === 'gmail';
-    }).length;
-    
-    const browserThreats = reports.filter(r => {
-      const platform = r.platform || detectPlatform(r.website_url || r.url);
-      return platform === 'web' || platform === 'browser';
-    }).length;
-    
-    console.log('📊 Platform counts:', { whatsappThreats, gmailThreats, browserThreats });
-    
-    const whatsappEl = document.getElementById('whatsappThreats');
-    const gmailEl = document.getElementById('gmailThreats');
-    const browserEl = document.getElementById('browserThreats');
-    
-    if (whatsappEl) whatsappEl.textContent = whatsappThreats;
-    if (gmailEl) gmailEl.textContent = gmailThreats;
-    if (browserEl) browserEl.textContent = browserThreats;
-    
-    console.log('✅ Stats updated');
-  }
-  
-  function renderTable(reports) {
-    const tbody = document.getElementById('mainTable');
-    if (!tbody) {
-      console.error('❌ Table body not found');
-      return;
-    }
-    
-    console.log('🎨 Rendering table with:', reports.length, 'reports');
-    
-    if (reports.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:50px;color:var(--text-secondary)">
+
+      // Initialize dashboard variables
+      window._reports = [];
+      window._currentFilter = 'all';
+      window._currentTimeFilter = 'all';
+      window._selectedThreats = new Set();
+      window._feedbackRecords = [];
+      window._feedbackFilter = 'all';
+
+      // Dashboard Functions
+      function calculateRiskScore(data) {
+        let score = 50;
+        if (data.risk_level) {
+          switch (data.risk_level.toLowerCase()) {
+            case 'critical': score = 95; break;
+            case 'high': score = 80; break;
+            case 'medium': score = 60; break;
+            case 'low': score = 30; break;
+          }
+        }
+        return score;
+      }
+
+      function classifyThreat(data) {
+        const score = calculateRiskScore(data);
+        if (score >= 80) return { level: 'CRITICAL', color: '#ff0066', icon: '🔴' };
+        if (score >= 60) return { level: 'HIGH', color: '#ff6600', icon: '🟠' };
+        if (score >= 40) return { level: 'MEDIUM', color: '#ffaa00', icon: '🟡' };
+        return { level: 'LOW', color: '#00ff88', icon: '🟢' };
+      }
+
+      function initializeFeedbackFeed() {
+        const feedbackQuery = query(collection(db, 'feedback_submissions'), orderBy('timestamp', 'desc'), limit(100));
+        onSnapshot(feedbackQuery, (snapshot) => {
+          window._feedbackRecords = snapshot.docs.map(feedbackDoc => ({ id: feedbackDoc.id, ...feedbackDoc.data() }));
+          renderFeedbackFeed();
+        }, (error) => {
+          console.error('Feedback feed listener failed:', error);
+          const feed = document.getElementById('feedbackFeed');
+          if (feed) feed.innerHTML = '<div class="feedback-empty">FEEDBACK UPLINK OFFLINE</div>';
+        });
+      }
+
+      function renderFeedbackFeed() {
+        const feed = document.getElementById('feedbackFeed');
+        if (!feed) return;
+        let records = window._feedbackRecords;
+        if (window._feedbackFilter === 'pending') records = records.filter(record => record.verificationStatus === 'PENDING_REVIEW');
+        if (window._feedbackFilter === 'positive') records = records.filter(record => record.type === 'FALSE_POSITIVE');
+        if (window._feedbackFilter === 'negative') records = records.filter(record => record.type === 'FALSE_NEGATIVE');
+        if (!records.length) { feed.innerHTML = '<div class="feedback-empty">NO SIGNALS MATCH THIS FILTER</div>'; return; }
+        feed.innerHTML = records.map(record => {
+          const isMissedScam = record.type === 'FALSE_NEGATIVE';
+          const date = record.timestamp ? new Date(record.timestamp).toLocaleString() : 'Unknown time';
+          const status = record.verificationStatus || 'PENDING_REVIEW';
+          const actionButtons = status === 'PENDING_REVIEW' ? `<button class="feedback-action add" onclick="verifyFeedback('${record.id}', 'VERIFIED_SCAM', 'QUEUED_FOR_ADDITION')">VERIFY & ADD TO SCAM DATASET</button><button class="feedback-action remove" onclick="verifyFeedback('${record.id}', 'VERIFIED_SAFE', 'QUEUED_FOR_REMOVAL')">VERIFY & EXCLUDE / RETRAIN</button>` : '<span class="feedback-closed">REVIEW COMPLETE</span>';
+          return `<article class="feedback-record"><div class="feedback-record-head"><span class="feedback-type ${isMissedScam ? 'missed' : 'false-alarm'}">${isMissedScam ? 'FALSE NEGATIVE' : 'FALSE POSITIVE'}</span><span class="feedback-status">${status}</span></div><div class="feedback-record-content">${escapeHtml(record.content || '')}</div><div class="feedback-record-meta"><span>AI: ${record.predictedStatus || 'UNKNOWN'} / ${record.riskScore ?? '--'}</span><span>${date}</span></div><div class="feedback-record-actions">${actionButtons}</div></article>`;
+        }).join('');
+      }
+
+      function setFeedbackFilter(filter, button) {
+        window._feedbackFilter = filter;
+        document.querySelectorAll('.feedback-filter').forEach(tab => tab.classList.remove('active'));
+        button.classList.add('active');
+        renderFeedbackFeed();
+      }
+
+      async function verifyFeedback(id, verificationStatus, datasetAction) {
+        try {
+          await updateDoc(doc(db, 'feedback_submissions', id), { verificationStatus, datasetAction, reviewedAt: new Date().toISOString() });
+          showNotification('Feedback record routed into the RLHF pipeline', 'success');
+        } catch (error) {
+          console.error('Feedback verification failed:', error);
+          showNotification('Could not update feedback record', 'error');
+        }
+      }
+
+      function escapeHtml(value) {
+        return String(value).replace(/[&<>'"]/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[character]));
+      }
+
+      function renderAll(reports) {
+        console.log('🎨 renderAll called with:', reports.length, 'reports');
+        console.log('🎨 hasRealData:', window.cyberShieldState.hasRealData);
+
+        // Always update stats, even with empty data
+        updateStats(reports);
+
+        // Always render the table, regardless of hasRealData
+        renderTable(reports);
+
+        console.log('✅ renderAll completed');
+      }
+
+      function updateStats(reports) {
+        console.log('📊 Updating stats with:', reports.length, 'reports');
+
+        // Store reports globally for other functions
+        window._reports = reports;
+
+        const totalEl = document.getElementById('statTotal');
+        const highEl = document.getElementById('statHigh');
+        const avgEl = document.getElementById('statAvg');
+
+        if (totalEl) totalEl.textContent = reports.length;
+
+        const highRisk = reports.filter(r => calculateRiskScore(r) >= 60).length;
+        if (highEl) highEl.textContent = highRisk;
+
+        const avgScore = reports.length > 0
+          ? Math.round(reports.reduce((sum, r) => sum + calculateRiskScore(r), 0) / reports.length)
+          : 0;
+        if (avgEl) avgEl.textContent = avgScore;
+
+        // Update platform stats with better detection
+        const whatsappThreats = reports.filter(r => {
+          const platform = r.platform || detectPlatform(r.website_url || r.url);
+          return platform === 'whatsapp';
+        }).length;
+
+        const gmailThreats = reports.filter(r => {
+          const platform = r.platform || detectPlatform(r.website_url || r.url);
+          return platform === 'gmail';
+        }).length;
+
+        const browserThreats = reports.filter(r => {
+          const platform = r.platform || detectPlatform(r.website_url || r.url);
+          return platform === 'web' || platform === 'browser';
+        }).length;
+
+        console.log('📊 Platform counts:', { whatsappThreats, gmailThreats, browserThreats });
+
+        const whatsappEl = document.getElementById('whatsappThreats');
+        const gmailEl = document.getElementById('gmailThreats');
+        const browserEl = document.getElementById('browserThreats');
+
+        if (whatsappEl) whatsappEl.textContent = whatsappThreats;
+        if (gmailEl) gmailEl.textContent = gmailThreats;
+        if (browserEl) browserEl.textContent = browserThreats;
+
+        console.log('✅ Stats updated');
+      }
+
+      function renderTable(reports) {
+        const tbody = document.getElementById('mainTable');
+        if (!tbody) {
+          console.error('❌ Table body not found');
+          return;
+        }
+
+        console.log('🎨 Rendering table with:', reports.length, 'reports');
+
+        if (reports.length === 0) {
+          tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:50px;color:var(--text-secondary)">
         <div class="empty-ring">🔍</div>
         <h3>NO THREATS FOUND</h3>
         <p>No threats detected. Your Firebase collection may be empty.</p>
       </td></tr>`;
-      return;
-    }
-    
-    tbody.innerHTML = reports.map((r, i) => {
-      const classification = classifyThreat(r);
-      const platform = r.platform || detectPlatform(r.website_url || r.url);
-      const platformIcon = platform === 'whatsapp' ? '💬' : platform === 'gmail' ? '📧' : '🌐';
-      const url = r.website_url || r.url || 'Unknown URL';
-      const isSelected = window._selectedThreats.has(r.id);
-      
-      console.log(`🎨 Rendering row ${i}:`, { id: r.id, url, platform, classification });
-      
-      return `<tr class="${isSelected ? 'selected' : ''}">
+          return;
+        }
+
+        tbody.innerHTML = reports.map((r, i) => {
+          const classification = classifyThreat(r);
+          const platform = r.platform || detectPlatform(r.website_url || r.url);
+          const platformIcon = platform === 'whatsapp' ? '💬' : platform === 'gmail' ? '📧' : '🌐';
+          const url = r.website_url || r.url || 'Unknown URL';
+          const isSelected = window._selectedThreats.has(r.id);
+
+          console.log(`🎨 Rendering row ${i}:`, { id: r.id, url, platform, classification });
+
+          return `<tr class="${isSelected ? 'selected' : ''}">
         <td>
           <input type="checkbox" 
                  class="threat-checkbox" 
@@ -294,7 +350,7 @@
                  onchange="toggleThreatSelection('${r.id}')"
                  style="transform:scale(1.2)">
         </td>
-        <td><span class="row-num">${String(i+1).padStart(2,'0')}</span></td>
+        <td><span class="row-num">${String(i + 1).padStart(2, '0')}</span></td>
         <td><div class="url-cell"><div class="url-icon">🔗</div><div class="url-text" title="${url}">${url}</div></div></td>
         <td><div class="rep-cell"><div class="rep-av" style="background:${classification.color}">${platformIcon}</div><div class="rep-email" title="${platform}">${platform.toUpperCase()}</div></div></td>
         <td><span class="status-badge" style="background:${classification.color}20;color:${classification.color};border:1px solid ${classification.color}40">${classification.icon} ${classification.level}</span></td>
@@ -303,213 +359,213 @@
           <button class="action-btn delete" onclick="individualAction('${r.id}', 'delete')" title="Delete Threat">🗑️</button>
         </td>
       </tr>`;
-    }).join('');
-    
-    console.log('✅ Table rendered successfully');
-  }
-  
-  function fmtTime(ts) {
-    if (!ts) return 'UNKNOWN';
-    let d;
-    if (ts.seconds) d = new Date(ts.seconds * 1000);
-    else if (ts.toDate) d = ts.toDate();
-    else d = new Date(ts);
-    if (isNaN(d)) return 'UNKNOWN';
-    return d.toLocaleString();
-  }
-  
-  function showNoDataState() {
-    const tbody = document.getElementById('mainTable');
-    if (tbody) {
-      tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:50px;color:var(--text-secondary)">
+        }).join('');
+
+        console.log('✅ Table rendered successfully');
+      }
+
+      function fmtTime(ts) {
+        if (!ts) return 'UNKNOWN';
+        let d;
+        if (ts.seconds) d = new Date(ts.seconds * 1000);
+        else if (ts.toDate) d = ts.toDate();
+        else d = new Date(ts);
+        if (isNaN(d)) return 'UNKNOWN';
+        return d.toLocaleString();
+      }
+
+      function showNoDataState() {
+        const tbody = document.getElementById('mainTable');
+        if (tbody) {
+          tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:50px;color:var(--text-secondary)">
         <div class="empty-ring">🔍</div>
         <h3>NO THREAT DATA</h3>
         <p>Waiting for real-time threat intelligence data...</p>
       </td></tr>`;
-    }
-  }
-  
-  function toggleAllSelect() {
-    const selectAll = document.getElementById('selectAll');
-    const checkboxes = document.querySelectorAll('.threat-checkbox');
-    
-    checkboxes.forEach(cb => {
-      cb.checked = selectAll.checked;
-      const threatId = cb.dataset.threatId;
-      if (selectAll.checked) {
-        window._selectedThreats.add(threatId);
-      } else {
-        window._selectedThreats.delete(threatId);
+        }
       }
-    });
-    
-    updateBulkActions();
-  }
-  
-  function toggleThreatSelection(threatId) {
-    if (window._selectedThreats.has(threatId)) {
-      window._selectedThreats.delete(threatId);
-    } else {
-      window._selectedThreats.add(threatId);
-    }
-    
-    updateBulkActions();
-  }
-  
-  function updateBulkActions() {
-    const bulkActions = document.getElementById('bulkActions');
-    const selectedCount = document.getElementById('selectedCount');
-    const count = window._selectedThreats.size;
-    
-    if (selectedCount) selectedCount.textContent = count;
-    
-    if (count > 0) {
-      if (bulkActions) {
-        bulkActions.style.display = 'block';
-        bulkActions.classList.add('show');
+
+      function toggleAllSelect() {
+        const selectAll = document.getElementById('selectAll');
+        const checkboxes = document.querySelectorAll('.threat-checkbox');
+
+        checkboxes.forEach(cb => {
+          cb.checked = selectAll.checked;
+          const threatId = cb.dataset.threatId;
+          if (selectAll.checked) {
+            window._selectedThreats.add(threatId);
+          } else {
+            window._selectedThreats.delete(threatId);
+          }
+        });
+
+        updateBulkActions();
       }
-    } else {
-      if (bulkActions) {
-        bulkActions.style.display = 'none';
-        bulkActions.classList.remove('show');
+
+      function toggleThreatSelection(threatId) {
+        if (window._selectedThreats.has(threatId)) {
+          window._selectedThreats.delete(threatId);
+        } else {
+          window._selectedThreats.add(threatId);
+        }
+
+        updateBulkActions();
       }
-    }
-  }
-  
-  function bulkAction(action) {
-    const selectedIds = Array.from(window._selectedThreats);
-    const count = selectedIds.length;
-    
-    if (count === 0) return;
-    
-    if (action === 'delete') {
-      // Remove from display only (not from Firebase)
-      window._reports = window._reports.filter(r => !selectedIds.includes(r.id));
-      window._selectedThreats.clear();
-      renderAll(window._reports);
-      updateBulkActions();
-      showNotification(`${count} threat(s) removed from display`, 'success');
-    }
-  }
-  
-  function individualAction(threatId, action) {
-    if (action === 'delete') {
-      // Remove from display only (not from Firebase)
-      window._reports = window._reports.filter(r => r.id !== threatId);
-      renderAll(window._reports);
-      showNotification('Threat removed from display', 'success');
-    }
-  }
-  
-  function showNotification(message, type = 'info') {
-    console.log('Notification:', message, type);
-  }
-  
-  function downloadCSV() {
-    const reports = window._reports || [];
-    
-    if (reports.length === 0) {
-      showNotification('No data available to download', 'warning');
-      return;
-    }
-    
-    // Get filtered data based on current filters
-    const searchTerm = document.getElementById('searchBox')?.value.toLowerCase() || '';
-    let filtered = reports;
-    
-    // Apply platform filter
-    if (window._currentFilter !== 'all') {
-      filtered = filtered.filter(r => r.platform === window._currentFilter);
-    }
-    
-    // Apply time filter
-    filtered = filterByTime(filtered);
-    
-    // Apply search filter
-    if (searchTerm) {
-      filtered = filtered.filter(r => 
-        (r.website_url && r.website_url.toLowerCase().includes(searchTerm))
-      );
-    }
-    
-    // Create CSV headers
-    const headers = ['ID', 'URL', 'Threat Type', 'Platform', 'Risk Level', 'Detected At', 'Hash'];
-    
-    // Create CSV data rows
-    const csvData = filtered.map(report => {
-      const classification = classifyThreat(report);
-      const platform = report.platform || detectPlatform(report.website_url || report.url);
-      const url = report.website_url || report.url || 'Unknown URL';
-      const detectedAt = report.detected_at ? fmtTime(report.detected_at) : 'Unknown';
-      
-      return [
-        report.id || '',
-        `"${url}"`,
-        report.threat_type || 'Unknown',
-        platform.toUpperCase(),
-        classification.level,
-        `"${detectedAt}"`,
-        report.hash || ''
-      ];
-    });
-    
-    // Combine headers and data
-    const csvContent = [headers, ...csvData]
-      .map(row => row.join(','))
-      .join('\n');
-    
-    // Create blob and download
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    const url = URL.createObjectURL(blob);
-    
-    // Generate filename with timestamp
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-    const filename = `cybershield-threats-${timestamp}.csv`;
-    
-    link.setAttribute('href', url);
-    link.setAttribute('download', filename);
-    link.style.visibility = 'hidden';
-    
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    
-    showNotification(`Downloaded ${filtered.length} threats as CSV`, 'success');
-  }
-  
-  function downloadPDF() {
-    const reports = window._reports || [];
-    
-    if (reports.length === 0) {
-      showNotification('No data available to download', 'warning');
-      return;
-    }
-    
-    // Get filtered data based on current filters
-    const searchTerm = document.getElementById('searchBox')?.value.toLowerCase() || '';
-    let filtered = reports;
-    
-    // Apply platform filter
-    if (window._currentFilter !== 'all') {
-      filtered = filtered.filter(r => r.platform === window._currentFilter);
-    }
-    
-    // Apply time filter
-    filtered = filterByTime(filtered);
-    
-    // Apply search filter
-    if (searchTerm) {
-      filtered = filtered.filter(r => 
-        (r.website_url && r.website_url.toLowerCase().includes(searchTerm))
-      );
-    }
-    
-    // Create PDF content as HTML
-    const timestamp = new Date().toLocaleString();
-    const platform = window._currentFilter === 'all' ? 'All Platforms' : window._currentFilter.toUpperCase();
-    
-    let pdfContent = `
+
+      function updateBulkActions() {
+        const bulkActions = document.getElementById('bulkActions');
+        const selectedCount = document.getElementById('selectedCount');
+        const count = window._selectedThreats.size;
+
+        if (selectedCount) selectedCount.textContent = count;
+
+        if (count > 0) {
+          if (bulkActions) {
+            bulkActions.style.display = 'block';
+            bulkActions.classList.add('show');
+          }
+        } else {
+          if (bulkActions) {
+            bulkActions.style.display = 'none';
+            bulkActions.classList.remove('show');
+          }
+        }
+      }
+
+      function bulkAction(action) {
+        const selectedIds = Array.from(window._selectedThreats);
+        const count = selectedIds.length;
+
+        if (count === 0) return;
+
+        if (action === 'delete') {
+          // Remove from display only (not from Firebase)
+          window._reports = window._reports.filter(r => !selectedIds.includes(r.id));
+          window._selectedThreats.clear();
+          renderAll(window._reports);
+          updateBulkActions();
+          showNotification(`${count} threat(s) removed from display`, 'success');
+        }
+      }
+
+      function individualAction(threatId, action) {
+        if (action === 'delete') {
+          // Remove from display only (not from Firebase)
+          window._reports = window._reports.filter(r => r.id !== threatId);
+          renderAll(window._reports);
+          showNotification('Threat removed from display', 'success');
+        }
+      }
+
+      function showNotification(message, type = 'info') {
+        console.log('Notification:', message, type);
+      }
+
+      function downloadCSV() {
+        const reports = window._reports || [];
+
+        if (reports.length === 0) {
+          showNotification('No data available to download', 'warning');
+          return;
+        }
+
+        // Get filtered data based on current filters
+        const searchTerm = document.getElementById('searchBox')?.value.toLowerCase() || '';
+        let filtered = reports;
+
+        // Apply platform filter
+        if (window._currentFilter !== 'all') {
+          filtered = filtered.filter(r => r.platform === window._currentFilter);
+        }
+
+        // Apply time filter
+        filtered = filterByTime(filtered);
+
+        // Apply search filter
+        if (searchTerm) {
+          filtered = filtered.filter(r =>
+            (r.website_url && r.website_url.toLowerCase().includes(searchTerm))
+          );
+        }
+
+        // Create CSV headers
+        const headers = ['ID', 'URL', 'Threat Type', 'Platform', 'Risk Level', 'Detected At', 'Hash'];
+
+        // Create CSV data rows
+        const csvData = filtered.map(report => {
+          const classification = classifyThreat(report);
+          const platform = report.platform || detectPlatform(report.website_url || report.url);
+          const url = report.website_url || report.url || 'Unknown URL';
+          const detectedAt = report.detected_at ? fmtTime(report.detected_at) : 'Unknown';
+
+          return [
+            report.id || '',
+            `"${url}"`,
+            report.threat_type || 'Unknown',
+            platform.toUpperCase(),
+            classification.level,
+            `"${detectedAt}"`,
+            report.hash || ''
+          ];
+        });
+
+        // Combine headers and data
+        const csvContent = [headers, ...csvData]
+          .map(row => row.join(','))
+          .join('\n');
+
+        // Create blob and download
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement('a');
+        const url = URL.createObjectURL(blob);
+
+        // Generate filename with timestamp
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+        const filename = `cybershield-threats-${timestamp}.csv`;
+
+        link.setAttribute('href', url);
+        link.setAttribute('download', filename);
+        link.style.visibility = 'hidden';
+
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+
+        showNotification(`Downloaded ${filtered.length} threats as CSV`, 'success');
+      }
+
+      function downloadPDF() {
+        const reports = window._reports || [];
+
+        if (reports.length === 0) {
+          showNotification('No data available to download', 'warning');
+          return;
+        }
+
+        // Get filtered data based on current filters
+        const searchTerm = document.getElementById('searchBox')?.value.toLowerCase() || '';
+        let filtered = reports;
+
+        // Apply platform filter
+        if (window._currentFilter !== 'all') {
+          filtered = filtered.filter(r => r.platform === window._currentFilter);
+        }
+
+        // Apply time filter
+        filtered = filterByTime(filtered);
+
+        // Apply search filter
+        if (searchTerm) {
+          filtered = filtered.filter(r =>
+            (r.website_url && r.website_url.toLowerCase().includes(searchTerm))
+          );
+        }
+
+        // Create PDF content as HTML
+        const timestamp = new Date().toLocaleString();
+        const platform = window._currentFilter === 'all' ? 'All Platforms' : window._currentFilter.toUpperCase();
+
+        let pdfContent = `
       <html>
         <head>
           <title>CyberShield Premium - Threat Intelligence Report</title>
@@ -620,16 +676,16 @@
             </thead>
             <tbody>
     `;
-    
-    // Add table rows
-    filtered.forEach((report, index) => {
-      const classification = classifyThreat(report);
-      const platform = report.platform || detectPlatform(report.website_url || report.url);
-      const url = report.website_url || report.url || 'Unknown URL';
-      const detectedAt = report.detected_at ? fmtTime(report.detected_at) : 'Unknown';
-      const riskClass = classification.level.toLowerCase().replace(' ', '-');
-      
-      pdfContent += `
+
+        // Add table rows
+        filtered.forEach((report, index) => {
+          const classification = classifyThreat(report);
+          const platform = report.platform || detectPlatform(report.website_url || report.url);
+          const url = report.website_url || report.url || 'Unknown URL';
+          const detectedAt = report.detected_at ? fmtTime(report.detected_at) : 'Unknown';
+          const riskClass = classification.level.toLowerCase().replace(' ', '-');
+
+          pdfContent += `
         <tr>
           <td>${index + 1}</td>
           <td class="url">${url}</td>
@@ -639,9 +695,9 @@
           <td>${detectedAt}</td>
         </tr>
       `;
-    });
-    
-    pdfContent += `
+        });
+
+        pdfContent += `
             </tbody>
           </table>
           
@@ -652,1006 +708,1189 @@
         </body>
       </html>
     `;
-    
-    // Create a new window and print
-    const printWindow = window.open('', '_blank');
-    printWindow.document.write(pdfContent);
-    printWindow.document.close();
-    
-    // Wait for content to load, then print
-    setTimeout(() => {
-      printWindow.print();
-      printWindow.close();
-      showNotification(`PDF report generated for ${filtered.length} threats`, 'success');
-    }, 500);
-  }
-  
-  function setFilt(platform, btn) {
-    window._currentFilter = platform;
-    document.querySelectorAll('.filt').forEach(b => b.classList.remove('on'));
-    btn.classList.add('on');
-    doFilter();
-  }
-  
-  function toggleDropdown() {
-    document.getElementById("timeDropdown").classList.toggle("show");
-  }
-  
-  function setTimeFilter(timeFilter, element) {
-    window._currentTimeFilter = timeFilter;
-    
-    // Update dropdown button text
-    const dropbtn = document.querySelector('.dropbtn');
-    if (timeFilter === 'all') {
-      dropbtn.innerHTML = '📅 All Time ▼';
-    } else if (timeFilter === 'month') {
-      dropbtn.innerHTML = '📆 Month-wise ▼';
-    } else if (timeFilter === 'week') {
-      dropbtn.innerHTML = '📊 Week-wise ▼';
-    }
-    
-    // Close dropdown
-    document.getElementById("timeDropdown").classList.remove("show");
-    
-    // Apply filter
-    doFilter();
-  }
-  
-  function filterByTime(reports) {
-    if (window._currentTimeFilter === 'all') {
-      return reports;
-    }
-    
-    const now = new Date();
-    const filtered = reports.filter(report => {
-      if (!report.detected_at) return false;
-      
-      let detectedDate;
-      if (report.detected_at.seconds) {
-        detectedDate = new Date(report.detected_at.seconds * 1000);
-      } else if (report.detected_at.toDate) {
-        detectedDate = report.detected_at.toDate();
-      } else {
-        detectedDate = new Date(report.detected_at);
+
+        // Create a new window and print
+        const printWindow = window.open('', '_blank');
+        printWindow.document.write(pdfContent);
+        printWindow.document.close();
+
+        // Wait for content to load, then print
+        setTimeout(() => {
+          printWindow.print();
+          printWindow.close();
+          showNotification(`PDF report generated for ${filtered.length} threats`, 'success');
+        }, 500);
       }
-      
-      if (isNaN(detectedDate)) return false;
-      
-      if (window._currentTimeFilter === 'month') {
-        // Filter by current month
-        return detectedDate.getMonth() === now.getMonth() && 
-               detectedDate.getFullYear() === now.getFullYear();
-      } else if (window._currentTimeFilter === 'week') {
-        // Filter by current week (last 7 days)
-        const weekAgo = new Date(now.getTime() - (7 * 24 * 60 * 60 * 1000));
-        return detectedDate >= weekAgo;
+
+      function setFilt(platform, btn) {
+        window._currentFilter = platform;
+        document.querySelectorAll('.filt').forEach(b => b.classList.remove('on'));
+        btn.classList.add('on');
+        doFilter();
       }
-      
-      return true;
-    });
-    
-    return filtered;
-  }
-  
-  function refreshThreats() {
-    // Show loading state
-    const tbody = document.getElementById('mainTable');
-    if (tbody) {
-      tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:50px;color:var(--text-secondary)">
+
+      function toggleDropdown() {
+        document.getElementById("timeDropdown").classList.toggle("show");
+      }
+
+      function setTimeFilter(timeFilter, element) {
+        window._currentTimeFilter = timeFilter;
+
+        // Update dropdown button text
+        const dropbtn = document.querySelector('.dropbtn');
+        if (timeFilter === 'all') {
+          dropbtn.innerHTML = '📅 All Time ▼';
+        } else if (timeFilter === 'month') {
+          dropbtn.innerHTML = '📆 Month-wise ▼';
+        } else if (timeFilter === 'week') {
+          dropbtn.innerHTML = '📊 Week-wise ▼';
+        }
+
+        // Close dropdown
+        document.getElementById("timeDropdown").classList.remove("show");
+
+        // Apply filter
+        doFilter();
+      }
+
+      function filterByTime(reports) {
+        if (window._currentTimeFilter === 'all') {
+          return reports;
+        }
+
+        const now = new Date();
+        const filtered = reports.filter(report => {
+          if (!report.detected_at) return false;
+
+          let detectedDate;
+          if (report.detected_at.seconds) {
+            detectedDate = new Date(report.detected_at.seconds * 1000);
+          } else if (report.detected_at.toDate) {
+            detectedDate = report.detected_at.toDate();
+          } else {
+            detectedDate = new Date(report.detected_at);
+          }
+
+          if (isNaN(detectedDate)) return false;
+
+          if (window._currentTimeFilter === 'month') {
+            // Filter by current month
+            return detectedDate.getMonth() === now.getMonth() &&
+              detectedDate.getFullYear() === now.getFullYear();
+          } else if (window._currentTimeFilter === 'week') {
+            // Filter by current week (last 7 days)
+            const weekAgo = new Date(now.getTime() - (7 * 24 * 60 * 60 * 1000));
+            return detectedDate >= weekAgo;
+          }
+
+          return true;
+        });
+
+        return filtered;
+      }
+
+      function refreshThreats() {
+        // Show loading state
+        const tbody = document.getElementById('mainTable');
+        if (tbody) {
+          tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:50px;color:var(--text-secondary)">
         <div class="loading-spinner">🔄</div>
         <h3>REFRESHING THREAT DATA</h3>
         <p>Fetching latest threat intelligence...</p>
       </td></tr>`;
-    }
-    
-    // Add rotation animation to refresh button
-    const refreshBtn = document.querySelector('.refresh-btn');
-    if (refreshBtn) {
-      refreshBtn.style.animation = 'spin 1s linear infinite';
-    }
-    
-    // Re-render with current data and filters
-    setTimeout(() => {
-      // Apply all current filters to refresh the view
-      doFilter();
-      
-      // Remove animation from refresh button
-      if (refreshBtn) {
-        refreshBtn.style.animation = '';
+        }
+
+        // Add rotation animation to refresh button
+        const refreshBtn = document.querySelector('.refresh-btn');
+        if (refreshBtn) {
+          refreshBtn.style.animation = 'spin 1s linear infinite';
+        }
+
+        // Re-render with current data and filters
+        setTimeout(() => {
+          // Apply all current filters to refresh the view
+          doFilter();
+
+          // Remove animation from refresh button
+          if (refreshBtn) {
+            refreshBtn.style.animation = '';
+          }
+
+          showNotification('Threat data refreshed successfully', 'success');
+        }, 1000);
       }
-      
-      showNotification('Threat data refreshed successfully', 'success');
-    }, 1000);
-  }
-  
-  function doFilter() {
-    const searchTerm = document.getElementById('searchBox')?.value.toLowerCase() || '';
-    let filtered = window._reports;
-    
-    // Apply platform filter
-    if (window._currentFilter !== 'all') {
-      filtered = filtered.filter(r => r.platform === window._currentFilter);
-    }
-    
-    // Apply time filter
-    filtered = filterByTime(filtered);
-    
-    // Apply search filter
-    if (searchTerm) {
-      filtered = filtered.filter(r => 
-        (r.website_url && r.website_url.toLowerCase().includes(searchTerm))
-      );
-    }
-    
-    // Apply deduplication to filtered results as well
-    const deduplicated = [];
-    const seenUrls = new Set();
-    const seenHashes = new Set();
-    
-    filtered.forEach(r => {
-      const normalizedUrl = r.website_url.toLowerCase().trim();
-      const threatHash = r.hash || createHash(normalizedUrl);
-      
-      if (!seenUrls.has(normalizedUrl) && (!r.hash || !seenHashes.has(threatHash))) {
-        seenUrls.add(normalizedUrl);
-        if (r.hash) seenHashes.add(threatHash);
-        deduplicated.push(r);
+
+      function doFilter() {
+        const searchTerm = document.getElementById('searchBox')?.value.toLowerCase() || '';
+        let filtered = window._reports;
+
+        // Apply platform filter
+        if (window._currentFilter !== 'all') {
+          filtered = filtered.filter(r => r.platform === window._currentFilter);
+        }
+
+        // Apply time filter
+        filtered = filterByTime(filtered);
+
+        // Apply search filter
+        if (searchTerm) {
+          filtered = filtered.filter(r =>
+            (r.website_url && r.website_url.toLowerCase().includes(searchTerm))
+          );
+        }
+
+        // Apply deduplication to filtered results as well
+        const deduplicated = [];
+        const seenUrls = new Set();
+        const seenHashes = new Set();
+
+        filtered.forEach(r => {
+          const normalizedUrl = r.website_url.toLowerCase().trim();
+          const threatHash = r.hash || createHash(normalizedUrl);
+
+          if (!seenUrls.has(normalizedUrl) && (!r.hash || !seenHashes.has(threatHash))) {
+            seenUrls.add(normalizedUrl);
+            if (r.hash) seenHashes.add(threatHash);
+            deduplicated.push(r);
+          }
+        });
+
+        console.log(`🔍 Filter results: ${filtered.length} → ${deduplicated.length} (after deduplication)`);
+        renderTable(deduplicated);
       }
-    });
-    
-    console.log(`🔍 Filter results: ${filtered.length} → ${deduplicated.length} (after deduplication)`);
-    renderTable(deduplicated);
-  }
-  
-  // Clock function
-  function startClock() {
-    function updateTime() {
-      const now = new Date();
-      const clockEl = document.getElementById('clockEl');
-      const dateEl = document.getElementById('dateEl');
-      
-      if (clockEl) {
-        const time = now.toTimeString().split(' ')[0];
-        clockEl.textContent = time;
+
+      // Clock function
+      function startClock() {
+        function updateTime() {
+          const now = new Date();
+          const clockEl = document.getElementById('clockEl');
+          const dateEl = document.getElementById('dateEl');
+
+          if (clockEl) {
+            const time = now.toTimeString().split(' ')[0];
+            clockEl.textContent = time;
+          }
+          if (dateEl) {
+            const date = now.toDateString();
+            dateEl.textContent = date;
+          }
+        }
+
+        updateTime();
+        setInterval(updateTime, 1000);
       }
-      if (dateEl) {
-        const date = now.toDateString();
-        dateEl.textContent = date;
+
+      // Initialize dashboard when DOM is ready
+      document.addEventListener('DOMContentLoaded', () => {
+        console.log('🚀 Dashboard DOM loaded, initializing...');
+        startClock();
+        showNoDataState();
+        initializeFirebase(); // Start Firebase connection
+      });
+
+      // Close dropdown when clicking outside
+      window.addEventListener('click', function (event) {
+        if (!event.target.matches('.dropbtn')) {
+          const dropdowns = document.getElementsByClassName("dropdown-content");
+          for (let i = 0; i < dropdowns.length; i++) {
+            const openDropdown = dropdowns[i];
+            if (openDropdown.classList.contains('show')) {
+              openDropdown.classList.remove('show');
+            }
+          }
+        }
+      });
+
+      // Make functions global
+      window.toggleAllSelect = toggleAllSelect;
+      window.toggleThreatSelection = toggleThreatSelection;
+      window.bulkAction = bulkAction;
+      window.individualAction = individualAction;
+      window.setFilt = setFilt;
+      window.doFilter = doFilter;
+      window.toggleDropdown = toggleDropdown;
+      window.setTimeFilter = setTimeFilter;
+      window.filterByTime = filterByTime;
+      window.refreshThreats = refreshThreats;
+      window.calculateRiskScore = calculateRiskScore;
+      window.classifyThreat = classifyThreat;
+      window.renderAll = renderAll;
+      window.updateStats = updateStats;
+      window.renderTable = renderTable;
+      window.showNoDataState = showNoDataState;
+      window.downloadCSV = downloadCSV;
+      window.downloadPDF = downloadPDF;
+
+    </script>
+    <style>
+      /* Dashboard Styles */
+      :root {
+        --primary: #00ffcc;
+        --secondary: #ff00ff;
+        --accent: #00ccff;
+        --danger: #ff0066;
+        --success: #00ff88;
+        --warning: #ffaa00;
+        --dark: #0a0a0f;
+        --darker: #050508;
+        --light: #ffffff;
+        --text: #b0b0c0;
+        --border: #2a2a3e;
+        --glass: rgba(255, 255, 255, 0.05);
+        --glass-border: rgba(255, 255, 255, 0.1);
       }
-    }
-    
-    updateTime();
-    setInterval(updateTime, 1000);
-  }
-  
-  // Initialize dashboard when DOM is ready
-  document.addEventListener('DOMContentLoaded', () => {
-    console.log('🚀 Dashboard DOM loaded, initializing...');
-    startClock();
-    showNoDataState();
-    initializeFirebase(); // Start Firebase connection
-  });
-  
-  // Close dropdown when clicking outside
-  window.addEventListener('click', function(event) {
-    if (!event.target.matches('.dropbtn')) {
-      const dropdowns = document.getElementsByClassName("dropdown-content");
-      for (let i = 0; i < dropdowns.length; i++) {
-        const openDropdown = dropdowns[i];
-        if (openDropdown.classList.contains('show')) {
-          openDropdown.classList.remove('show');
+
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: 'Space Grotesk', sans-serif;
+        background: var(--darker);
+        color: var(--light);
+        overflow-x: hidden;
+      }
+
+      /* Topbar */
+      .topbar {
+        background: linear-gradient(135deg, rgba(0, 255, 204, 0.1), rgba(0, 204, 255, 0.1));
+        backdrop-filter: blur(20px);
+        border-bottom: 1px solid var(--glass-border);
+        padding: 16px 24px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        position: sticky;
+        top: 0;
+        z-index: 100;
+      }
+
+      .logo-area {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+      }
+
+      .logo-hex {
+        width: 48px;
+        height: 48px;
+        background: linear-gradient(135deg, var(--primary), var(--accent));
+        border-radius: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 24px;
+      }
+
+      .logo-text {
+        font-family: 'Orbitron', monospace;
+        font-size: 18px;
+        font-weight: 700;
+        color: var(--light);
+      }
+
+      .logo-sub {
+        font-size: 12px;
+        color: var(--text);
+      }
+
+      .topbar-center {
+        display: flex !important;
+        align-items: center;
+        justify-content: center;
+        flex: 1;
+      }
+
+      .admin-tag {
+        background: linear-gradient(135deg, var(--primary), var(--accent));
+        color: var(--dark);
+        padding: 6px 12px;
+        border-radius: 6px;
+        font-size: 12px;
+        font-weight: 600;
+        font-family: 'Orbitron', monospace;
+      }
+
+      /* Main Content */
+      .main {
+        padding: 40px 24px;
+        max-width: 1400px;
+        margin: 0 auto;
+      }
+
+      /* Hero Section */
+      .hero {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 40px;
+        margin-bottom: 40px;
+        align-items: center;
+      }
+
+      .hero-content h1 {
+        font-family: 'Orbitron', monospace;
+        font-size: 48px;
+        font-weight: 800;
+        margin: 16px 0;
+        background: linear-gradient(135deg, var(--primary), var(--accent));
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+      }
+
+      .hero-badge {
+        display: inline-block;
+        background: rgba(255, 0, 102, 0.2);
+        color: var(--danger);
+        padding: 6px 12px;
+        border-radius: 6px;
+        font-size: 12px;
+        font-weight: 600;
+        margin-bottom: 16px;
+      }
+
+      .hero-sub {
+        color: var(--text);
+        font-size: 18px;
+        line-height: 1.6;
+        max-width: 600px;
+      }
+
+      .threat-index {
+        background: var(--glass);
+        border: 1px solid var(--glass-border);
+        border-radius: 16px;
+        padding: 24px;
+        text-align: center;
+        min-width: 200px;
+      }
+
+      .index-label {
+        font-size: 12px;
+        color: var(--text);
+        margin-bottom: 8px;
+      }
+
+      .index-value {
+        font-family: 'Orbitron', monospace;
+        font-size: 36px;
+        font-weight: 800;
+        color: var(--primary);
+        margin-bottom: 8px;
+      }
+
+      .index-status {
+        font-size: 14px;
+        color: var(--success);
+        font-weight: 600;
+      }
+
+      /* Stats Row */
+      .stats-row {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 24px;
+        margin-bottom: 40px;
+      }
+
+      .stat-card {
+        background: var(--glass);
+        border: 1px solid var(--glass-border);
+        border-radius: 16px;
+        padding: 24px;
+        display: flex;
+        align-items: center;
+        gap: 16px;
+      }
+
+      .stat-icon {
+        width: 48px;
+        height: 48px;
+        background: linear-gradient(135deg, var(--primary), var(--accent));
+        border-radius: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 24px;
+      }
+
+      .stat-value {
+        font-family: 'Orbitron', monospace;
+        font-size: 24px;
+        font-weight: 700;
+        color: var(--light);
+      }
+
+      .stat-label {
+        font-size: 12px;
+        color: var(--text);
+      }
+
+      /* Platform Cards */
+      .mid-row {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 24px;
+        margin-bottom: 40px;
+      }
+
+      .platform-card {
+        background: var(--glass);
+        border: 1px solid var(--glass-border);
+        border-radius: 16px;
+        padding: 24px;
+        text-align: center;
+      }
+
+      .platform-header {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 12px;
+        margin-bottom: 16px;
+      }
+
+      .platform-icon {
+        font-size: 24px;
+      }
+
+      .platform-name {
+        font-weight: 600;
+        color: var(--light);
+      }
+
+      .platform-threats {
+        font-family: 'Orbitron', monospace;
+        font-size: 32px;
+        font-weight: 700;
+        color: var(--primary);
+      }
+
+      .platform-label {
+        font-size: 12px;
+        color: var(--text);
+      }
+
+      /* Table Section */
+      .table-section {
+        background: var(--glass);
+        border: 1px solid var(--glass-border);
+        border-radius: 16px;
+        padding: 24px;
+      }
+
+      .feedback-section {
+        margin-top: 24px;
+        padding: 24px;
+        background: linear-gradient(135deg, rgba(0, 243, 255, .06), rgba(255, 42, 95, .035));
+        border: 1px solid rgba(0, 243, 255, .28);
+        border-radius: 16px;
+      }
+
+      .feedback-section-sub {
+        margin: 6px 0 0;
+        color: var(--text-secondary);
+        font-size: 12px;
+      }
+
+      .feedback-portal-link {
+        color: var(--primary);
+        font-size: 11px;
+        font-weight: 700;
+        text-decoration: none;
+        letter-spacing: .5px;
+      }
+
+      .feedback-filters {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-bottom: 18px;
+      }
+
+      .feedback-filter {
+        padding: 9px 12px;
+        color: var(--text-secondary);
+        background: rgba(8, 11, 16, .65);
+        border: 1px solid var(--glass-border);
+        border-radius: 5px;
+        cursor: pointer;
+        font-size: 10px;
+        font-weight: 700;
+      }
+
+      .feedback-filter.active,
+      .feedback-filter:hover {
+        color: #061016;
+        background: var(--primary);
+        border-color: var(--primary);
+      }
+
+      .feedback-feed {
+        display: grid;
+        gap: 12px;
+      }
+
+      .feedback-record {
+        padding: 16px;
+        background: rgba(8, 11, 16, .7);
+        border: 1px solid var(--glass-border);
+        border-left: 3px solid var(--accent);
+      }
+
+      .feedback-record-head,
+      .feedback-record-meta,
+      .feedback-record-actions {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+
+      .feedback-type,
+      .feedback-status {
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: .7px;
+      }
+
+      .feedback-type {
+        color: var(--accent);
+      }
+
+      .feedback-type.missed {
+        color: var(--primary);
+      }
+
+      .feedback-status {
+        color: #a9bacd;
+      }
+
+      .feedback-record-content {
+        margin: 12px 0;
+        color: var(--light);
+        font: 12px/1.6 'DM Mono', monospace;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+
+      .feedback-record-meta {
+        color: var(--text-secondary);
+        font-size: 10px;
+      }
+
+      .feedback-record-actions {
+        justify-content: flex-start;
+        margin-top: 14px;
+      }
+
+      .feedback-action {
+        padding: 8px 10px;
+        color: var(--light);
+        background: transparent;
+        border: 1px solid var(--glass-border);
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 10px;
+        font-weight: 700;
+      }
+
+      .feedback-action.add {
+        color: var(--primary);
+        border-color: var(--primary);
+      }
+
+      .feedback-action.remove {
+        color: var(--accent);
+        border-color: var(--accent);
+      }
+
+      .feedback-action:hover {
+        color: #061016;
+        background: currentColor;
+      }
+
+      .feedback-closed {
+        color: #00ff88;
+        font-size: 10px;
+        letter-spacing: .8px;
+      }
+
+      .feedback-empty {
+        padding: 28px;
+        color: var(--text-secondary);
+        border: 1px dashed var(--glass-border);
+        text-align: center;
+        font-size: 11px;
+      }
+
+      .section-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 24px;
+      }
+
+      .section-header h2 {
+        font-family: 'Orbitron', monospace;
+        font-size: 20px;
+        font-weight: 700;
+        color: var(--light);
+      }
+
+      .header-actions {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+      }
+
+      .search-box input {
+        background: var(--glass);
+        border: 1px solid var(--glass-border);
+        border-radius: 8px;
+        padding: 10px 16px;
+        color: var(--light);
+        font-size: 14px;
+        width: 300px;
+      }
+
+      .download-btn {
+        background: linear-gradient(135deg, var(--primary), var(--accent));
+        border: none;
+        border-radius: 8px;
+        padding: 10px 20px;
+        color: var(--dark);
+        font-weight: 600;
+        font-size: 14px;
+        cursor: pointer;
+        transition: all 0.3s;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .download-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0, 255, 204, 0.3);
+      }
+
+      .pdf-btn {
+        background: linear-gradient(135deg, var(--danger), #ff3366);
+      }
+
+      .pdf-btn:hover {
+        box-shadow: 0 4px 12px rgba(255, 0, 102, 0.3);
+      }
+
+      .refresh-btn {
+        background: linear-gradient(135deg, var(--warning), #ffcc00);
+        border: none;
+        border-radius: 8px;
+        padding: 10px 20px;
+        color: var(--dark);
+        font-weight: 600;
+        font-size: 14px;
+        cursor: pointer;
+        transition: all 0.3s;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .refresh-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(255, 170, 0, 0.3);
+      }
+
+      .refresh-btn:active {
+        transform: rotate(180deg);
+      }
+
+      .loading-spinner {
+        font-size: 48px;
+        animation: spin 1s linear infinite;
+        margin-bottom: 16px;
+      }
+
+      @keyframes spin {
+        from {
+          transform: rotate(0deg);
+        }
+
+        to {
+          transform: rotate(360deg);
         }
       }
-    }
-  });
-  
-  // Make functions global
-  window.toggleAllSelect = toggleAllSelect;
-  window.toggleThreatSelection = toggleThreatSelection;
-  window.bulkAction = bulkAction;
-  window.individualAction = individualAction;
-  window.setFilt = setFilt;
-  window.doFilter = doFilter;
-  window.toggleDropdown = toggleDropdown;
-  window.setTimeFilter = setTimeFilter;
-  window.filterByTime = filterByTime;
-  window.refreshThreats = refreshThreats;
-  window.calculateRiskScore = calculateRiskScore;
-  window.classifyThreat = classifyThreat;
-  window.renderAll = renderAll;
-  window.updateStats = updateStats;
-  window.renderTable = renderTable;
-  window.showNoDataState = showNoDataState;
-  window.downloadCSV = downloadCSV;
-  window.downloadPDF = downloadPDF;
-  
-</script>
-<style>
-/* Dashboard Styles */
-:root {
-  --primary: #00ffcc;
-  --secondary: #ff00ff;
-  --accent: #00ccff;
-  --danger: #ff0066;
-  --success: #00ff88;
-  --warning: #ffaa00;
-  --dark: #0a0a0f;
-  --darker: #050508;
-  --light: #ffffff;
-  --text: #b0b0c0;
-  --border: #2a2a3e;
-  --glass: rgba(255, 255, 255, 0.05);
-  --glass-border: rgba(255, 255, 255, 0.1);
-}
-
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-}
-
-body {
-  font-family: 'Space Grotesk', sans-serif;
-  background: var(--darker);
-  color: var(--light);
-  overflow-x: hidden;
-}
-
-/* Topbar */
-.topbar {
-  background: linear-gradient(135deg, rgba(0, 255, 204, 0.1), rgba(0, 204, 255, 0.1));
-  backdrop-filter: blur(20px);
-  border-bottom: 1px solid var(--glass-border);
-  padding: 16px 24px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  position: sticky;
-  top: 0;
-  z-index: 100;
-}
-
-.logo-area {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-}
-
-.logo-hex {
-  width: 48px;
-  height: 48px;
-  background: linear-gradient(135deg, var(--primary), var(--accent));
-  border-radius: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 24px;
-}
-
-.logo-text {
-  font-family: 'Orbitron', monospace;
-  font-size: 18px;
-  font-weight: 700;
-  color: var(--light);
-}
-
-.logo-sub {
-  font-size: 12px;
-  color: var(--text);
-}
-
-.topbar-center {
-  display: flex !important;
-  align-items: center;
-  justify-content: center;
-  flex: 1;
-}
-
-.admin-tag {
-  background: linear-gradient(135deg, var(--primary), var(--accent));
-  color: var(--dark);
-  padding: 6px 12px;
-  border-radius: 6px;
-  font-size: 12px;
-  font-weight: 600;
-  font-family: 'Orbitron', monospace;
-}
-
-/* Main Content */
-.main {
-  padding: 40px 24px;
-  max-width: 1400px;
-  margin: 0 auto;
-}
-
-/* Hero Section */
-.hero {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 40px;
-  margin-bottom: 40px;
-  align-items: center;
-}
-
-.hero-content h1 {
-  font-family: 'Orbitron', monospace;
-  font-size: 48px;
-  font-weight: 800;
-  margin: 16px 0;
-  background: linear-gradient(135deg, var(--primary), var(--accent));
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
-
-.hero-badge {
-  display: inline-block;
-  background: rgba(255, 0, 102, 0.2);
-  color: var(--danger);
-  padding: 6px 12px;
-  border-radius: 6px;
-  font-size: 12px;
-  font-weight: 600;
-  margin-bottom: 16px;
-}
-
-.hero-sub {
-  color: var(--text);
-  font-size: 18px;
-  line-height: 1.6;
-  max-width: 600px;
-}
-
-.threat-index {
-  background: var(--glass);
-  border: 1px solid var(--glass-border);
-  border-radius: 16px;
-  padding: 24px;
-  text-align: center;
-  min-width: 200px;
-}
-
-.index-label {
-  font-size: 12px;
-  color: var(--text);
-  margin-bottom: 8px;
-}
-
-.index-value {
-  font-family: 'Orbitron', monospace;
-  font-size: 36px;
-  font-weight: 800;
-  color: var(--primary);
-  margin-bottom: 8px;
-}
-
-.index-status {
-  font-size: 14px;
-  color: var(--success);
-  font-weight: 600;
-}
-
-/* Stats Row */
-.stats-row {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 24px;
-  margin-bottom: 40px;
-}
-
-.stat-card {
-  background: var(--glass);
-  border: 1px solid var(--glass-border);
-  border-radius: 16px;
-  padding: 24px;
-  display: flex;
-  align-items: center;
-  gap: 16px;
-}
-
-.stat-icon {
-  width: 48px;
-  height: 48px;
-  background: linear-gradient(135deg, var(--primary), var(--accent));
-  border-radius: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 24px;
-}
-
-.stat-value {
-  font-family: 'Orbitron', monospace;
-  font-size: 24px;
-  font-weight: 700;
-  color: var(--light);
-}
-
-.stat-label {
-  font-size: 12px;
-  color: var(--text);
-}
-
-/* Platform Cards */
-.mid-row {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 24px;
-  margin-bottom: 40px;
-}
-
-.platform-card {
-  background: var(--glass);
-  border: 1px solid var(--glass-border);
-  border-radius: 16px;
-  padding: 24px;
-  text-align: center;
-}
-
-.platform-header {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  margin-bottom: 16px;
-}
-
-.platform-icon {
-  font-size: 24px;
-}
-
-.platform-name {
-  font-weight: 600;
-  color: var(--light);
-}
-
-.platform-threats {
-  font-family: 'Orbitron', monospace;
-  font-size: 32px;
-  font-weight: 700;
-  color: var(--primary);
-}
-
-.platform-label {
-  font-size: 12px;
-  color: var(--text);
-}
-
-/* Table Section */
-.table-section {
-  background: var(--glass);
-  border: 1px solid var(--glass-border);
-  border-radius: 16px;
-  padding: 24px;
-}
-
-.section-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 24px;
-}
-
-.section-header h2 {
-  font-family: 'Orbitron', monospace;
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--light);
-}
-
-.header-actions {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-}
-
-.search-box input {
-  background: var(--glass);
-  border: 1px solid var(--glass-border);
-  border-radius: 8px;
-  padding: 10px 16px;
-  color: var(--light);
-  font-size: 14px;
-  width: 300px;
-}
-
-.download-btn {
-  background: linear-gradient(135deg, var(--primary), var(--accent));
-  border: none;
-  border-radius: 8px;
-  padding: 10px 20px;
-  color: var(--dark);
-  font-weight: 600;
-  font-size: 14px;
-  cursor: pointer;
-  transition: all 0.3s;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.download-btn:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0, 255, 204, 0.3);
-}
-
-.pdf-btn {
-  background: linear-gradient(135deg, var(--danger), #ff3366);
-}
-
-.pdf-btn:hover {
-  box-shadow: 0 4px 12px rgba(255, 0, 102, 0.3);
-}
-
-.refresh-btn {
-  background: linear-gradient(135deg, var(--warning), #ffcc00);
-  border: none;
-  border-radius: 8px;
-  padding: 10px 20px;
-  color: var(--dark);
-  font-weight: 600;
-  font-size: 14px;
-  cursor: pointer;
-  transition: all 0.3s;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.refresh-btn:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(255, 170, 0, 0.3);
-}
-
-.refresh-btn:active {
-  transform: rotate(180deg);
-}
-
-.loading-spinner {
-  font-size: 48px;
-  animation: spin 1s linear infinite;
-  margin-bottom: 16px;
-}
-
-@keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
-}
-
-.filter-bar {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  margin-bottom: 24px;
-}
-
-.filter-label {
-  font-size: 12px;
-  color: var(--text);
-  font-weight: 500;
-}
-
-.filt {
-  background: var(--glass);
-  border: 1px solid var(--glass-border);
-  border-radius: 8px;
-  padding: 8px 16px;
-  color: var(--text);
-  font-size: 12px;
-  cursor: pointer;
-  transition: all 0.3s;
-}
-
-.filt.on {
-  background: linear-gradient(135deg, var(--primary), var(--accent));
-  color: var(--dark);
-  border-color: var(--primary);
-}
-
-/* Dropdown Styles */
-.dropdown {
-  position: relative;
-  display: inline-block;
-}
-
-.dropbtn {
-  background: var(--glass);
-  border: 1px solid var(--glass-border);
-  border-radius: 8px;
-  padding: 8px 16px;
-  color: var(--text);
-  font-size: 12px;
-  cursor: pointer;
-  transition: all 0.3s;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.dropbtn:hover {
-  background: var(--glass-border);
-}
-
-.dropdown-content {
-  display: none;
-  position: absolute;
-  background: var(--dark);
-  border: 1px solid var(--glass-border);
-  border-radius: 8px;
-  min-width: 150px;
-  z-index: 1000;
-  top: 100%;
-  left: 0;
-  margin-top: 4px;
-  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.3);
-}
-
-.dropdown-content a {
-  color: var(--text);
-  padding: 10px 16px;
-  text-decoration: none;
-  display: block;
-  font-size: 12px;
-  transition: all 0.3s;
-  border-radius: 6px;
-  margin: 2px;
-}
-
-.dropdown-content a:hover {
-  background: linear-gradient(135deg, var(--primary), var(--accent));
-  color: var(--dark);
-}
-
-.show {
-  display: block;
-}
-
-/* Table Styles */
-table {
-  width: 100%;
-  border-collapse: collapse;
-}
-
-th {
-  text-align: left;
-  padding: 12px;
-  font-size: 12px;
-  color: var(--text);
-  font-weight: 600;
-  border-bottom: 1px solid var(--border);
-}
-
-td {
-  padding: 12px;
-  font-size: 14px;
-  border-bottom: 1px solid var(--border);
-}
-
-.url-cell {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.url-icon {
-  font-size: 16px;
-}
-
-.url-text {
-  max-width: 300px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.rep-cell {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.rep-av {
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 12px;
-  color: white;
-}
-
-.rep-email {
-  font-size: 12px;
-  font-weight: 500;
-}
-
-.status-badge {
-  padding: 4px 8px;
-  border-radius: 4px;
-  font-size: 11px;
-  font-weight: 600;
-}
-
-.time-cell {
-  font-size: 12px;
-  color: var(--text);
-}
-
-.action-btn {
-  background: none;
-  border: none;
-  cursor: pointer;
-  font-size: 16px;
-  padding: 4px;
-  border-radius: 4px;
-  transition: all 0.2s;
-}
-
-.action-btn:hover {
-  background: var(--glass);
-}
-
-/* Bulk Actions */
-.bulk-actions {
-  background: linear-gradient(135deg, rgba(0, 255, 204, 0.1), rgba(0, 204, 255, 0.1));
-  border: 1px solid var(--glass-border);
-  border-radius: 12px;
-  padding: 16px 24px;
-  margin-top: 24px;
-  display: none;
-}
-
-.bulk-actions.show {
-  display: block;
-}
-
-.bulk-actions-content {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.bulk-info {
-  color: var(--text);
-  font-size: 14px;
-}
-
-.bulk-btn {
-  background: linear-gradient(135deg, var(--danger), #ff3366);
-  border: none;
-  border-radius: 8px;
-  padding: 10px 20px;
-  color: var(--light);
-  font-weight: 600;
-  cursor: pointer;
-}
-
-/* Footer */
-.footer {
-  text-align: center;
-  padding: 24px;
-  color: var(--text);
-  font-size: 12px;
-  border-top: 1px solid var(--border);
-  margin-top: 40px;
-}
-
-/* Animations */
-.fade-up {
-  opacity: 0;
-  transform: translateY(24px);
-  animation: fadeUp 0.6s ease forwards;
-}
-
-@keyframes fadeUp {
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-/* Responsive */
-@media (max-width: 768px) {
-  .hero {
-    grid-template-columns: 1fr;
-  }
-  
-  .stats-row {
-    grid-template-columns: repeat(2, 1fr);
-  }
-  
-  .mid-row {
-    grid-template-columns: 1fr;
-  }
-  
-  .section-header {
-    flex-direction: column;
-    gap: 16px;
-  }
-  
-  .search-box input {
-    width: 100%;
-  }
-}
-</style>
-</head>
-<body>
-
-<!-- TOPBAR -->
-<div class="topbar">
-  <div class="logo-area">
-    <div class="logo-hex">🛡️</div>
-    <div>
-      <div class="logo-text">CYBERSHIELD PREMIUM</div>
-      <div class="logo-sub">AI-Powered Threat Intelligence Platform</div>
-    </div>
-  </div>
-  <div class="topbar-center">
-    <span style="margin-right:10px">⏱</span>
-    <span id="clockEl" style="font-family:'Courier New',monospace;font-size:1.2rem;color:var(--primary);font-weight:bold">--:--:--</span>
-    <span style="color:var(--text-secondary);margin:0 15px">|</span>
-    <span id="dateEl" style="font-family:'Courier New',monospace;font-size:1rem;color:var(--text-secondary)">---</span>
-  </div>
-  <div class="topbar-right">
-    <div class="admin-tag">PREMIUM ACCESS</div>
-  </div>
-</div>
-
-<!-- MAIN -->
-<div class="main">
-  <!-- HERO -->
-  <div class="hero fade-up">
-    <div class="hero-content">
-      <div class="hero-badge">🔴 AI-POWERED MONITORING</div>
-      <h1>PREMIUM <span>THREAT INTELLIGENCE</span> DASHBOARD</h1>
-      <p class="hero-sub">Advanced AI-powered real-time detection and analysis of cyber threats. Machine learning algorithms process thousands of data points to protect you from phishing, malware, and sophisticated attacks.</p>
-    </div>
-    <div class="hero-right">
-      <div class="threat-index">
-        <div class="index-label">AI THREAT INDEX</div>
-        <div class="index-value" id="threatIndex">0%</div>
-        <div class="index-status" id="threatLabel">LOW</div>
-      </div>
-    </div>
-  </div>
-
-  <!-- STATS ROW -->
-  <div class="stats-row fade-up">
-    <div class="stat-card">
-      <div class="stat-icon">🔍</div>
-      <div class="stat-info">
-        <div class="stat-value" id="statTotal">0</div>
-        <div class="stat-label">Total Threats</div>
-      </div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-icon">⚠️</div>
-      <div class="stat-info">
-        <div class="stat-value" id="statHigh">0</div>
-        <div class="stat-label">High Risk</div>
-      </div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-icon">📊</div>
-      <div class="stat-info">
-        <div class="stat-value" id="statAvg">0</div>
-        <div class="stat-label">Avg Risk Score</div>
-      </div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-icon">🛡️</div>
-      <div class="stat-info">
-        <div class="stat-value" id="statProtected">100%</div>
-        <div class="stat-label">Protection Rate</div>
-      </div>
-    </div>
-  </div>
-
-  <!-- PLATFORM STATUS -->
-  <div class="mid-row fade-up">
-    <div class="platform-card whatsapp">
-      <div class="platform-header">
-        <div class="platform-icon">💬</div>
-        <div class="platform-name">WHATSAPP</div>
-      </div>
-      <div class="platform-stats">
-        <div class="platform-threats" id="whatsappThreats">0</div>
-        <div class="platform-label">Threats</div>
-      </div>
-    </div>
-    <div class="platform-card gmail">
-      <div class="platform-header">
-        <div class="platform-icon">📧</div>
-        <div class="platform-name">GMAIL</div>
-      </div>
-      <div class="platform-stats">
-        <div class="platform-threats" id="gmailThreats">0</div>
-        <div class="platform-label">Threats</div>
-      </div>
-    </div>
-    <div class="platform-card browser">
-      <div class="platform-header">
-        <div class="platform-icon">🌐</div>
-        <div class="platform-name">BROWSER</div>
-      </div>
-      <div class="platform-stats">
-        <div class="platform-threats" id="browserThreats">0</div>
-        <div class="platform-label">Threats</div>
-      </div>
-    </div>
-  </div>
-
-  <!-- TABLE SECTION -->
-  <div class="table-section fade-up">
-    <div class="section-header">
-      <h2>🔴 LIVE THREAT FEED</h2>
-      <div class="header-actions">
-        <div class="search-box">
-          <input type="text" id="searchBox" placeholder="🔍 Search threats..." onkeyup="doFilter()">
+
+      .filter-bar {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        margin-bottom: 24px;
+      }
+
+      .filter-label {
+        font-size: 12px;
+        color: var(--text);
+        font-weight: 500;
+      }
+
+      .filt {
+        background: var(--glass);
+        border: 1px solid var(--glass-border);
+        border-radius: 8px;
+        padding: 8px 16px;
+        color: var(--text);
+        font-size: 12px;
+        cursor: pointer;
+        transition: all 0.3s;
+      }
+
+      .filt.on {
+        background: linear-gradient(135deg, var(--primary), var(--accent));
+        color: var(--dark);
+        border-color: var(--primary);
+      }
+
+      /* Dropdown Styles */
+      .dropdown {
+        position: relative;
+        display: inline-block;
+      }
+
+      .dropbtn {
+        background: var(--glass);
+        border: 1px solid var(--glass-border);
+        border-radius: 8px;
+        padding: 8px 16px;
+        color: var(--text);
+        font-size: 12px;
+        cursor: pointer;
+        transition: all 0.3s;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+
+      .dropbtn:hover {
+        background: var(--glass-border);
+      }
+
+      .dropdown-content {
+        display: none;
+        position: absolute;
+        background: var(--dark);
+        border: 1px solid var(--glass-border);
+        border-radius: 8px;
+        min-width: 150px;
+        z-index: 1000;
+        top: 100%;
+        left: 0;
+        margin-top: 4px;
+        box-shadow: 0 8px 16px rgba(0, 0, 0, 0.3);
+      }
+
+      .dropdown-content a {
+        color: var(--text);
+        padding: 10px 16px;
+        text-decoration: none;
+        display: block;
+        font-size: 12px;
+        transition: all 0.3s;
+        border-radius: 6px;
+        margin: 2px;
+      }
+
+      .dropdown-content a:hover {
+        background: linear-gradient(135deg, var(--primary), var(--accent));
+        color: var(--dark);
+      }
+
+      .show {
+        display: block;
+      }
+
+      /* Table Styles */
+      table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+
+      th {
+        text-align: left;
+        padding: 12px;
+        font-size: 12px;
+        color: var(--text);
+        font-weight: 600;
+        border-bottom: 1px solid var(--border);
+      }
+
+      td {
+        padding: 12px;
+        font-size: 14px;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .url-cell {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .url-icon {
+        font-size: 16px;
+      }
+
+      .url-text {
+        max-width: 300px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .rep-cell {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .rep-av {
+        width: 24px;
+        height: 24px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 12px;
+        color: white;
+      }
+
+      .rep-email {
+        font-size: 12px;
+        font-weight: 500;
+      }
+
+      .status-badge {
+        padding: 4px 8px;
+        border-radius: 4px;
+        font-size: 11px;
+        font-weight: 600;
+      }
+
+      .time-cell {
+        font-size: 12px;
+        color: var(--text);
+      }
+
+      .action-btn {
+        background: none;
+        border: none;
+        cursor: pointer;
+        font-size: 16px;
+        padding: 4px;
+        border-radius: 4px;
+        transition: all 0.2s;
+      }
+
+      .action-btn:hover {
+        background: var(--glass);
+      }
+
+      /* Bulk Actions */
+      .bulk-actions {
+        background: linear-gradient(135deg, rgba(0, 255, 204, 0.1), rgba(0, 204, 255, 0.1));
+        border: 1px solid var(--glass-border);
+        border-radius: 12px;
+        padding: 16px 24px;
+        margin-top: 24px;
+        display: none;
+      }
+
+      .bulk-actions.show {
+        display: block;
+      }
+
+      .bulk-actions-content {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+
+      .bulk-info {
+        color: var(--text);
+        font-size: 14px;
+      }
+
+      .bulk-btn {
+        background: linear-gradient(135deg, var(--danger), #ff3366);
+        border: none;
+        border-radius: 8px;
+        padding: 10px 20px;
+        color: var(--light);
+        font-weight: 600;
+        cursor: pointer;
+      }
+
+      /* Footer */
+      .footer {
+        text-align: center;
+        padding: 24px;
+        color: var(--text);
+        font-size: 12px;
+        border-top: 1px solid var(--border);
+        margin-top: 40px;
+      }
+
+      /* Animations */
+      .fade-up {
+        opacity: 0;
+        transform: translateY(24px);
+        animation: fadeUp 0.6s ease forwards;
+      }
+
+      @keyframes fadeUp {
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      /* Responsive */
+      @media (max-width: 768px) {
+        .hero {
+          grid-template-columns: 1fr;
+        }
+
+        .stats-row {
+          grid-template-columns: repeat(2, 1fr);
+        }
+
+        .mid-row {
+          grid-template-columns: 1fr;
+        }
+
+        .section-header {
+          flex-direction: column;
+          gap: 16px;
+        }
+
+        .search-box input {
+          width: 100%;
+        }
+      }
+    </style>
+  </head>
+
+  <body>
+
+    <!-- TOPBAR -->
+    <div class="topbar">
+      <div class="logo-area">
+        <div class="logo-hex">🛡️</div>
+        <div>
+          <div class="logo-text">CYBERSHIELD PREMIUM</div>
+          <div class="logo-sub">AI-Powered Threat Intelligence Platform</div>
         </div>
-        <button class="refresh-btn" onclick="refreshThreats()" title="Refresh threat data">🔄 Refresh</button>
-        <button class="download-btn" onclick="downloadCSV()" title="Download threat data as CSV">📥 CSV</button>
-        <button class="download-btn pdf-btn" onclick="downloadPDF()" title="Download threat data as PDF">📄 PDF</button>
+      </div>
+      <div class="topbar-center">
+        <span style="margin-right:10px">⏱</span>
+        <span id="clockEl"
+          style="font-family:'Courier New',monospace;font-size:1.2rem;color:var(--primary);font-weight:bold">--:--:--</span>
+        <span style="color:var(--text-secondary);margin:0 15px">|</span>
+        <span id="dateEl"
+          style="font-family:'Courier New',monospace;font-size:1rem;color:var(--text-secondary)">---</span>
+      </div>
+      <div class="topbar-right">
+        <div class="admin-tag">PREMIUM ACCESS</div>
       </div>
     </div>
-    <div class="filter-bar">
-      <span class="filter-label">Platform Filters:</span>
-      <button class="filt on" onclick="setFilt('all',this)">🎯 ALL PLATFORMS</button>
-      <button class="filt" onclick="setFilt('whatsapp',this)">💬 WHATSAPP</button>
-      <button class="filt" onclick="setFilt('gmail',this)">📧 GMAIL</button>
-      <button class="filt" onclick="setFilt('web',this)">🌐 BROWSER</button>
-      
-      <span class="filter-label" style="margin-left: 20px;">Time Filters:</span>
-      <div class="dropdown">
-        <button class="dropbtn" onclick="toggleDropdown()">📅 All Time ▼</button>
-        <div class="dropdown-content" id="timeDropdown">
-          <a href="#" onclick="setTimeFilter('all', this)">📅 All Time</a>
-          <a href="#" onclick="setTimeFilter('month', this)">📆 Month-wise</a>
-          <a href="#" onclick="setTimeFilter('week', this)">📊 Week-wise</a>
+
+    <!-- MAIN -->
+    <div class="main">
+      <!-- HERO -->
+      <div class="hero fade-up">
+        <div class="hero-content">
+          <div class="hero-badge">🔴 AI-POWERED MONITORING</div>
+          <h1>PREMIUM <span>THREAT INTELLIGENCE</span> DASHBOARD</h1>
+          <p class="hero-sub">Advanced AI-powered real-time detection and analysis of cyber threats. Machine learning
+            algorithms process thousands of data points to protect you from phishing, malware, and sophisticated
+            attacks.</p>
+        </div>
+        <div class="hero-right">
+          <div class="threat-index">
+            <div class="index-label">AI THREAT INDEX</div>
+            <div class="index-value" id="threatIndex">0%</div>
+            <div class="index-status" id="threatLabel">LOW</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- STATS ROW -->
+      <div class="stats-row fade-up">
+        <div class="stat-card">
+          <div class="stat-icon">🔍</div>
+          <div class="stat-info">
+            <div class="stat-value" id="statTotal">0</div>
+            <div class="stat-label">Total Threats</div>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon">⚠️</div>
+          <div class="stat-info">
+            <div class="stat-value" id="statHigh">0</div>
+            <div class="stat-label">High Risk</div>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon">📊</div>
+          <div class="stat-info">
+            <div class="stat-value" id="statAvg">0</div>
+            <div class="stat-label">Avg Risk Score</div>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon">🛡️</div>
+          <div class="stat-info">
+            <div class="stat-value" id="statProtected">100%</div>
+            <div class="stat-label">Protection Rate</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- PLATFORM STATUS -->
+      <div class="mid-row fade-up">
+        <div class="platform-card whatsapp">
+          <div class="platform-header">
+            <div class="platform-icon">💬</div>
+            <div class="platform-name">WHATSAPP</div>
+          </div>
+          <div class="platform-stats">
+            <div class="platform-threats" id="whatsappThreats">0</div>
+            <div class="platform-label">Threats</div>
+          </div>
+        </div>
+        <div class="platform-card gmail">
+          <div class="platform-header">
+            <div class="platform-icon">📧</div>
+            <div class="platform-name">GMAIL</div>
+          </div>
+          <div class="platform-stats">
+            <div class="platform-threats" id="gmailThreats">0</div>
+            <div class="platform-label">Threats</div>
+          </div>
+        </div>
+        <div class="platform-card browser">
+          <div class="platform-header">
+            <div class="platform-icon">🌐</div>
+            <div class="platform-name">BROWSER</div>
+          </div>
+          <div class="platform-stats">
+            <div class="platform-threats" id="browserThreats">0</div>
+            <div class="platform-label">Threats</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TABLE SECTION -->
+      <div class="table-section fade-up">
+        <div class="section-header">
+          <h2>🔴 LIVE THREAT FEED</h2>
+          <div class="header-actions">
+            <div class="search-box">
+              <input type="text" id="searchBox" placeholder="🔍 Search threats..." onkeyup="doFilter()">
+            </div>
+            <button class="refresh-btn" onclick="refreshThreats()" title="Refresh threat data">🔄 Refresh</button>
+            <button class="download-btn" onclick="downloadCSV()" title="Download threat data as CSV">📥 CSV</button>
+            <button class="download-btn pdf-btn" onclick="downloadPDF()" title="Download threat data as PDF">📄
+              PDF</button>
+          </div>
+        </div>
+        <div class="filter-bar">
+          <span class="filter-label">Platform Filters:</span>
+          <button class="filt on" onclick="setFilt('all',this)">🎯 ALL PLATFORMS</button>
+          <button class="filt" onclick="setFilt('whatsapp',this)">💬 WHATSAPP</button>
+          <button class="filt" onclick="setFilt('gmail',this)">📧 GMAIL</button>
+          <button class="filt" onclick="setFilt('web',this)">🌐 BROWSER</button>
+
+          <span class="filter-label" style="margin-left: 20px;">Time Filters:</span>
+          <div class="dropdown">
+            <button class="dropbtn" onclick="toggleDropdown()">📅 All Time ▼</button>
+            <div class="dropdown-content" id="timeDropdown">
+              <a href="#" onclick="setTimeFilter('all', this)">📅 All Time</a>
+              <a href="#" onclick="setTimeFilter('month', this)">📆 Month-wise</a>
+              <a href="#" onclick="setTimeFilter('week', this)">📊 Week-wise</a>
+            </div>
+          </div>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th style="width:50px">
+                <input type="checkbox" id="selectAll" onchange="toggleAllSelect()" style="transform:scale(1.2)">
+              </th>
+              <th>#</th>
+              <th>Threat URL / Target</th>
+              <th>Platform</th>
+              <th>Risk Level</th>
+              <th>Detected Time</th>
+              <th style="width:80px">Delete</th>
+            </tr>
+          </thead>
+          <tbody id="mainTable">
+            <tr>
+              <td colspan="7" style="text-align:center;padding:50px;color:var(--text-secondary)">
+                <span class="spin"></span>🤖 AI is analyzing threat data...
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- FEEDBACK & DATASET CURATION -->
+      <section class="feedback-section fade-up">
+        <div class="section-header">
+          <div>
+            <h2>🧠 FEEDBACK & RLHF CURATION</h2>
+            <p class="feedback-section-sub">Human verification queue for false alarms and missed scams</p>
+          </div>
+          <a class="feedback-portal-link" href="feedback.html">OPEN FEEDBACK PORTAL ↗</a>
+        </div>
+        <div class="feedback-filters">
+          <button class="feedback-filter active" onclick="setFeedbackFilter('all', this)">ALL SUBMISSIONS</button>
+          <button class="feedback-filter" onclick="setFeedbackFilter('pending', this)">PENDING VERIFICATION</button>
+          <button class="feedback-filter" onclick="setFeedbackFilter('positive', this)">FALSE POSITIVES /
+            REMOVE</button>
+          <button class="feedback-filter" onclick="setFeedbackFilter('negative', this)">FALSE NEGATIVES / ADD</button>
+        </div>
+        <div id="feedbackFeed" class="feedback-feed">
+          <div class="feedback-empty">AWAITING FEEDBACK SIGNALS...</div>
+        </div>
+      </section>
+
+      <!-- Bulk Actions Panel -->
+      <div class="bulk-actions" id="bulkActions" style="display:none">
+        <div class="bulk-actions-content">
+          <div class="bulk-info">
+            <span id="selectedCount">0</span> threats selected
+          </div>
+          <div class="bulk-buttons">
+            <button class="bulk-btn danger" onclick="bulkAction('delete')">
+              🗑️ Delete All Selected
+            </button>
+          </div>
+
         </div>
       </div>
     </div>
-    <table>
-      <thead>
-        <tr>
-          <th style="width:50px">
-            <input type="checkbox" id="selectAll" onchange="toggleAllSelect()" style="transform:scale(1.2)">
-          </th>
-          <th>#</th>
-          <th>Threat URL / Target</th>
-          <th>Platform</th>
-          <th>Risk Level</th>
-          <th>Detected Time</th>
-          <th style="width:80px">Delete</th>
-        </tr>
-      </thead>
-      <tbody id="mainTable">
-        <tr><td colspan="7" style="text-align:center;padding:50px;color:var(--text-secondary)">
-          <span class="spin"></span>🤖 AI is analyzing threat data...
-        </td></tr>
-      </tbody>
-    </table>
-  </div>
 
-  <!-- Bulk Actions Panel -->
-  <div class="bulk-actions" id="bulkActions" style="display:none">
-    <div class="bulk-actions-content">
-      <div class="bulk-info">
-        <span id="selectedCount">0</span> threats selected
-      </div>
-      <div class="bulk-buttons">
-        <button class="bulk-btn danger" onclick="bulkAction('delete')">
-          🗑️ Delete All Selected
-        </button>
-      </div>
+    <div class="footer">
+      🛡️ CYBERSHIELD PREMIUM AI-POWERED THREAT INTELLIGENCE &nbsp;|&nbsp; ADVANCED MACHINE LEARNING PROTECTION
+      &nbsp;|&nbsp; REAL-TIME THREAT DETECTION & ANALYSIS
     </div>
-  </div>
-</div>
 
-<div class="footer">
-  🛡️ CYBERSHIELD PREMIUM AI-POWERED THREAT INTELLIGENCE &nbsp;|&nbsp; ADVANCED MACHINE LEARNING PROTECTION &nbsp;|&nbsp; REAL-TIME THREAT DETECTION & ANALYSIS
-</div>
+  </body>
 
-</body>
 </html>

@@ -1,0 +1,24 @@
+{
+  "name": "cyber_shield_ai-final",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "**Copyright © 2026 Soundar M & Team. All Rights Reserved.**",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/soundar-codes/Cyber_Shield_Ai-final.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "firebase-admin": "^14.2.0"
+  },
+  "bugs": {
+    "url": "https://github.com/soundar-codes/Cyber_Shield_Ai-final/issues"
+  },
+  "homepage": "https://github.com/soundar-codes/Cyber_Shield_Ai-final#readme"
+}
