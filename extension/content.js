@@ -1173,7 +1173,7 @@ function showWarning(data) {
             riskScore: String(riskScore),
             signals: threats.join('|')
         });
-        window.open(`https://cybershield-frontend-swart.vercel.app/feedback?${params.toString()}`, '_blank', 'noopener');
+        window.open(`https://cybershield-88323.web.app/cybershield-feedback?${params.toString()}`, '_blank', 'noopener');
     });
     // ✅ NO auto-close — warning stays until user manually dismisses or page refreshes
 }

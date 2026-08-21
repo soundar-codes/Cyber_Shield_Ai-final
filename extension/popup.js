@@ -54,7 +54,7 @@ function openFeedbackPortal() {
         });
 
         chrome.tabs.create({
-            url: `https://cybershield-frontend-swart.vercel.app/feedback?${params.toString()}`
+            url: `https://cybershield-88323.web.app/cybershield-feedback?${params.toString()}`
         });
     });
 }

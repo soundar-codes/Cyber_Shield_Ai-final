@@ -29,7 +29,24 @@ service cloud.firestore {
         'verificationStatus', 'datasetAction', 'reviewedAt'
       ])
       && request.resource.data.verificationStatus in ['PENDING_REVIEW', 'VERIFIED_SCAM', 'VERIFIED_SAFE', 'REJECTED']
-      && request.resource.data.datasetAction in ['QUEUED_FOR_ADDITION', 'QUEUED_FOR_REMOVAL', 'NONE'];
+      && request.resource.data.datasetAction in ['NONE', 'ADDED_TO_DATASET', 'EXCLUDED_FROM_DATASET'];
+    }
+
+    match /training_dataset/{datasetId} {
+      allow create: if request.resource.data.keys().hasOnly([
+        'content', 'label', 'source', 'feedbackId', 'signals', 'riskScore', 'createdAt'
+      ])
+      && request.resource.data.content is string
+      && request.resource.data.content.size() > 0
+      && request.resource.data.content.size() <= 5000
+      && request.resource.data.label == 'SCAM'
+      && request.resource.data.source == 'HUMAN_FEEDBACK'
+      && request.resource.data.feedbackId is string
+      && request.resource.data.riskScore is int
+      && request.resource.data.riskScore >= 0
+      && request.resource.data.riskScore <= 100;
+      allow read: if true;
+      allow update, delete: if false;
     }
 
     match /threat_logs/{threatId} {

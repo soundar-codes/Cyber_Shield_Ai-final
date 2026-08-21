@@ -1,5 +1,7 @@
 {
   "rewrites": [
+    { "source": "/cybershield-feedback", "destination": "/feedback.html" },
+    { "source": "/cybershield-feedback/", "destination": "/feedback.html" },
     { "source": "/feedback", "destination": "/feedback.html" },
     { "source": "/feedback/", "destination": "/feedback.html" }
   ]

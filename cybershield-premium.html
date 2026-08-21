@@ -10,7 +10,7 @@
       rel="stylesheet">
     <script type="module">
       import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-      import { getFirestore, collection, onSnapshot, query, orderBy, limit, where, getDocs, serverTimestamp, updateDoc, doc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+      import { getFirestore, collection, onSnapshot, query, orderBy, limit, where, getDocs, serverTimestamp, updateDoc, addDoc, doc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
       // Your exact Firebase configuration
       const firebaseConfig = {
@@ -53,6 +53,8 @@
 
       // Initialize Firebase connection and start listening
       async function initializeFirebase() {
+        // Keep the feedback queue available even if the threat feed is unavailable.
+        initializeFeedbackFeed();
         const isConnected = await testFirebaseConnection();
 
         if (isConnected) {
@@ -130,8 +132,6 @@
             });
 
             console.log('✅ Real-time listener started successfully');
-            initializeFeedbackFeed();
-
           } catch (error) {
             console.error("❌ Firebase listener setup failed:", error);
             showConnectionError(error.message);
@@ -226,7 +226,7 @@
           const isMissedScam = record.type === 'FALSE_NEGATIVE';
           const date = record.timestamp ? new Date(record.timestamp).toLocaleString() : 'Unknown time';
           const status = record.verificationStatus || 'PENDING_REVIEW';
-          const actionButtons = status === 'PENDING_REVIEW' ? `<button class="feedback-action add" onclick="verifyFeedback('${record.id}', 'VERIFIED_SCAM', 'QUEUED_FOR_ADDITION')">VERIFY & ADD TO SCAM DATASET</button><button class="feedback-action remove" onclick="verifyFeedback('${record.id}', 'VERIFIED_SAFE', 'QUEUED_FOR_REMOVAL')">VERIFY & EXCLUDE / RETRAIN</button>` : '<span class="feedback-closed">REVIEW COMPLETE</span>';
+          const actionButtons = status === 'PENDING_REVIEW' ? `<button class="feedback-action add" onclick="verifyFeedback('${record.id}', 'VERIFIED_SCAM', 'ADDED_TO_DATASET')">ADD DIRECTLY TO SCAM DATASET</button><button class="feedback-action remove" onclick="verifyFeedback('${record.id}', 'VERIFIED_SAFE', 'EXCLUDED_FROM_DATASET')">MARK SAFE / EXCLUDE</button>` : '<span class="feedback-closed">REVIEW COMPLETE</span>';
           return `<article class="feedback-record"><div class="feedback-record-head"><span class="feedback-type ${isMissedScam ? 'missed' : 'false-alarm'}">${isMissedScam ? 'FALSE NEGATIVE' : 'FALSE POSITIVE'}</span><span class="feedback-status">${status}</span></div><div class="feedback-record-content">${escapeHtml(record.content || '')}</div><div class="feedback-record-meta"><span>AI: ${record.predictedStatus || 'UNKNOWN'} / ${record.riskScore ?? '--'}</span><span>${date}</span></div><div class="feedback-record-actions">${actionButtons}</div></article>`;
         }).join('');
       }
@@ -239,14 +239,33 @@
       }
 
       async function verifyFeedback(id, verificationStatus, datasetAction) {
+        const record = window._feedbackRecords.find(feedbackRecord => feedbackRecord.id === id);
+        if (!record) return;
+        const buttons = document.querySelectorAll(`button[onclick*="${id}"]`);
+        buttons.forEach(button => { button.disabled = true; });
         try {
+          if (datasetAction === 'ADDED_TO_DATASET') {
+            await addDoc(collection(db, 'training_dataset'), {
+              content: record.content,
+              label: 'SCAM',
+              source: 'HUMAN_FEEDBACK',
+              feedbackId: id,
+              signals: record.signals || [],
+              riskScore: record.riskScore ?? 0,
+              createdAt: new Date().toISOString()
+            });
+          }
           await updateDoc(doc(db, 'feedback_submissions', id), { verificationStatus, datasetAction, reviewedAt: new Date().toISOString() });
-          showNotification('Feedback record routed into the RLHF pipeline', 'success');
+          showNotification(datasetAction === 'ADDED_TO_DATASET' ? 'Added directly to the scam dataset' : 'Feedback marked safe and excluded', 'success');
         } catch (error) {
           console.error('Feedback verification failed:', error);
           showNotification('Could not update feedback record', 'error');
+          buttons.forEach(button => { button.disabled = false; });
         }
       }
+
+      window.setFeedbackFilter = setFeedbackFilter;
+      window.verifyFeedback = verifyFeedback;
 
       function escapeHtml(value) {
         return String(value).replace(/[&<>'"]/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[character]));
@@ -1856,7 +1875,7 @@
             <h2>🧠 FEEDBACK & RLHF CURATION</h2>
             <p class="feedback-section-sub">Human verification queue for false alarms and missed scams</p>
           </div>
-          <a class="feedback-portal-link" href="feedback.html">OPEN FEEDBACK PORTAL ↗</a>
+          <a class="feedback-portal-link" href="cybershield-feedback">OPEN CYBERSHIELD FEEDBACK ↗</a>
         </div>
         <div class="feedback-filters">
           <button class="feedback-filter active" onclick="setFeedbackFilter('all', this)">ALL SUBMISSIONS</button>

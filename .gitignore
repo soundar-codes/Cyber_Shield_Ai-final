@@ -53,6 +53,7 @@ threat_logs_backup.json
 # Local agent/runtime metadata
 .agents/
 .vercel/
+.firebase/
 
 # Test files
 test_*.js
