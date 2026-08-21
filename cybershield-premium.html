@@ -226,7 +226,7 @@
           const isMissedScam = record.type === 'FALSE_NEGATIVE';
           const date = record.timestamp ? new Date(record.timestamp).toLocaleString() : 'Unknown time';
           const status = record.verificationStatus || 'PENDING_REVIEW';
-          const actionButtons = status === 'PENDING_REVIEW' ? `<button class="feedback-action add" onclick="verifyFeedback('${record.id}', 'VERIFIED_SCAM', 'ADDED_TO_DATASET')">ADD DIRECTLY TO SCAM DATASET</button><button class="feedback-action remove" onclick="verifyFeedback('${record.id}', 'VERIFIED_SAFE', 'EXCLUDED_FROM_DATASET')">MARK SAFE / EXCLUDE</button>` : '<span class="feedback-closed">REVIEW COMPLETE</span>';
+          const actionButtons = status === 'PENDING_REVIEW' ? `<button class="feedback-action add" onclick="verifyFeedback('${record.id}', 'VERIFIED_SCAM', 'ADDED_TO_DATASET')">SAVE TO FIREBASE DATASET</button><button class="feedback-action remove" onclick="verifyFeedback('${record.id}', 'VERIFIED_SAFE', 'EXCLUDED_FROM_DATASET')">SAVE AS VERIFIED SAFE</button>` : '<span class="feedback-closed">REVIEW COMPLETE</span>';
           return `<article class="feedback-record"><div class="feedback-record-head"><span class="feedback-type ${isMissedScam ? 'missed' : 'false-alarm'}">${isMissedScam ? 'FALSE NEGATIVE' : 'FALSE POSITIVE'}</span><span class="feedback-status">${status}</span></div><div class="feedback-record-content">${escapeHtml(record.content || '')}</div><div class="feedback-record-meta"><span>AI: ${record.predictedStatus || 'UNKNOWN'} / ${record.riskScore ?? '--'}</span><span>${date}</span></div><div class="feedback-record-actions">${actionButtons}</div></article>`;
         }).join('');
       }
@@ -256,7 +256,7 @@
             });
           }
           await updateDoc(doc(db, 'feedback_submissions', id), { verificationStatus, datasetAction, reviewedAt: new Date().toISOString() });
-          showNotification(datasetAction === 'ADDED_TO_DATASET' ? 'Added directly to the scam dataset' : 'Feedback marked safe and excluded', 'success');
+          showNotification(datasetAction === 'ADDED_TO_DATASET' ? 'Saved to Firebase dataset; model was not retrained' : 'Saved as verified safe; model was not retrained', 'success');
         } catch (error) {
           console.error('Feedback verification failed:', error);
           showNotification('Could not update feedback record', 'error');
